@@ -1,4 +1,18 @@
+# AI 關鍵字攻防 ─ 二驗企劃書
+
 資訊營AI組 周宗穎
+GitHub連結：https://github.com/mcjksieu005/prompt_injection_battle
+
+---
+
+## 測試網站連結
+
+- 記分板：http://ws1.csie.ntu.edu.tw:6767/scoreboard/
+- 後台：http://ws1.csie.ntu.edu.tw:6767/admin/
+    - 帳號：admin
+    - 密碼：camp2026
+- 紅隊：http://ws1.csie.ntu.edu.tw:6767/team/red/
+- 藍隊：http://ws1.csie.ntu.edu.tw:6767/team/blue/
 
 ---
 
@@ -69,7 +83,7 @@ OPENROUTER_API_KEY=sk-or-v1-你的真實金鑰
 
 **4. 啟動伺服器**
 ```bash
-python app.py
+python full.py
 ```
 啟動後，伺服器將運行於 http://0.0.0.0:6767 。參與者可透過瀏覽器進入 /team/red、/team/blue 等對應路由進行遊戲。
 
