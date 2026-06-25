@@ -8,6 +8,9 @@ import time
 import re
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # ==========================================
 # ⚙️ 系統設定
 # ==========================================
