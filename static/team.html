@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小隊終端機</title>
+    <style>
+        :root {
+            /* 美術團隊看這裡：這些是核心變數，只需改動這些就能換皮 */
+            --theme-color: #ef4444; /* 預設紅色，JS 會動態修改 */
+            --bg-page: #f8fafc;
+            --bg-panel: #ffffff;
+            --text-main: #1e293b;
+            --border-color: #e2e8f0;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --radius: 12px;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-page); color: var(--text-main); margin: 0; padding: 20px; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; }
+        
+        /* 頂部狀態列 */
+        .top-bar { background: var(--bg-panel); border-top: 5px solid var(--theme-color); border-radius: var(--radius); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; flex-shrink: 0; }
+        .top-bar h1 { margin: 0; color: var(--theme-color); font-size: 1.8rem; }
+        .status-info { display: flex; gap: 30px; font-size: 1.2rem; font-weight: bold; align-items: center; }
+        .score-badge { background: var(--theme-color); color: white; padding: 5px 15px; border-radius: 20px; font-size: 1.5rem; }
+
+        /* 左右雙面板佈局 */
+        .main-container { display: flex; gap: 20px; flex: 1; min-height: 0; }
+        .panel { background: var(--bg-panel); border-radius: var(--radius); padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow-y: auto; position: relative; }
+        .left-panel { flex: 1; border-right: 2px solid var(--border-color); }
+        .right-panel { flex: 1; background: #f1f5f9; }
+
+        /* 關鍵字看板 */
+        .keyword-board { background: #fffbeb; border: 1px solid #fde68a; padding: 15px; border-radius: var(--radius); margin-bottom: 20px; }
+        .keyword-tag { display: inline-block; background: white; border: 2px solid var(--theme-color); color: var(--theme-color); padding: 5px 10px; border-radius: 6px; font-family: monospace; font-weight: bold; margin: 4px; }
+
+        /* 輸入區塊與遮罩 */
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #475569; }
+        input[type="text"], textarea { width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; font-family: monospace; font-size: 14px; box-sizing: border-box; transition: border-color 0.2s; }
+        input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--theme-color); box-shadow: 0 0 0 3px rgba(var(--theme-color), 0.2); }
+        
+        button { background: var(--theme-color); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: opacity 0.2s; width: 100%; }
+        button:hover:not(:disabled) { opacity: 0.9; }
+        button:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+        /* 鎖定遮罩 (等待/結算階段時顯示) */
+        .lock-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(2px); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 10; border-radius: var(--radius); }
+        .lock-overlay.active { display: flex; }
+        .lock-msg { background: var(--theme-color); color: white; padding: 15px 30px; border-radius: 30px; font-size: 1.2rem; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+
+        /* 戰報氣泡 (Chat Bubbles) */
+        .log-bubble { background: white; border-radius: var(--radius); padding: 15px; margin-bottom: 15px; border-left: 6px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .log-bubble.success { border-left-color: var(--success-color); background: #f0fdf4; }
+        .log-bubble.fail { border-left-color: var(--danger-color); }
+        .log-header { font-weight: bold; margin-bottom: 8px; display: flex; justify-content: space-between; }
+        .log-content { font-family: monospace; font-size: 0.95rem; color: #334155; white-space: pre-wrap; background: rgba(0,0,0,0.03); padding: 10px; border-radius: 6px; }
+        .log-hits { color: var(--success-color); font-weight: bold; margin-bottom: 8px; }
+
+        /* 階段視圖切換 */
+        .view-section { display: none; }
+        .view-section.active { display: block; }
+    </style>
+</head>
+<body>
+
+    <!-- 頂部狀態列 -->
+    <div class="top-bar">
+        <h1 id="team-title">載入中...</h1>
+        <div class="status-info">
+            <div id="phase-display">階段：連線中...</div>
+            <div id="timer-display">⏱️ 00:00</div>
+            <div id="cd-display" style="display: none; color: #ef4444;">🚀 武器冷卻中</div>
+            <div class="score-badge">總分: <span id="team-score">0</span></div>
+            <button style="background: #64748b; color: white;" onclick="doLogout()">🚪 登出</button>
+        </div>
+    </div>
+
+    <!-- 左右雙面板 -->
+    <div class="main-container">
+        <!-- 左側面板：戰略輸入 -->
+        <div class="panel left-panel">
+            <div class="keyword-board">
+                <strong>🎯 任務目標關鍵字：</strong>
+                <div id="keyword-container"></div>
+            </div>
+
+            <!-- 第一輪視圖 -->
+            <div id="view-r1" class="view-section active">
+                <p>📝 <strong>盲打佈局</strong>：輸入即時同步至伺服器。</p>
+                <div class="input-group">
+                    <label>🛡️ Defense Prompt (防禦指令)</label>
+                    <textarea id="r1-def" rows="3" placeholder="設定你的防禦護欄..."></textarea>
+                </div>
+                <div id="r1-attacks-container">
+                    <!-- JS 動態生成 10 個攻擊輸入框 -->
+                </div>
+            </div>
+
+            <!-- 第二輪視圖 -->
+            <div id="view-r2" class="view-section">
+                <p>🔥 <strong>即時熱戰</strong>：手動儲存防禦，攻擊有 15 秒冷卻。</p>
+                <div class="input-group">
+                    <label>🛡️ 熱更新 Defense Prompt</label>
+                    <textarea id="r2-def" rows="3"></textarea>
+                    <button onclick="updateDefense()" style="margin-top: 10px;">💾 儲存並覆蓋防禦</button>
+                </div>
+                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+                <div class="input-group">
+                    <label>⚔️ 發動單次攻擊 (Attack Prompt)</label>
+                    <textarea id="r2-atk" rows="2" placeholder="輸入單次攻擊指令..."></textarea>
+                    <button id="btn-fire" onclick="launchAttack()" style="margin-top: 10px;">🚀 發射攻擊</button>
+                </div>
+            </div>
+
+            <!-- 鎖定遮罩 -->
+            <div id="lock-overlay" class="lock-overlay">
+                <div class="lock-msg" id="lock-msg">⏳ 請等待關主指示...</div>
+            </div>
+        </div>
+
+        <!-- 右側面板：戰報輸出 -->
+        <div class="panel right-panel">
+            <h2 style="margin-top: 0;">📜 即時戰報</h2>
+            <div id="history-container">
+                <!-- JS 動態生成戰鬥日誌氣泡 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 🌟 1. 解析網址參數，決定隊伍身分
+        const urlParams = new URLSearchParams(window.location.search);
+        const TEAM = urlParams.get('team') === 'blue' ? 'blue' : 'red'; // 預設為 red
+        
+        // 🌟 2. 根據隊伍動態套用色彩與標題
+        const themeColor = TEAM === 'red' ? '#ef4444' : '#3b82f6';
+        document.documentElement.style.setProperty('--theme-color', themeColor);
+        document.getElementById('team-title').innerText = TEAM === 'red' ? '🔴 終端機 (紅隊)' : '🔵 終端機 (藍隊)';
+
+        // 🌟 3. 初始化 R1 的 10 個攻擊輸入框
+        const r1Container = document.getElementById('r1-attacks-container');
+        for(let i=0; i<10; i++) {
+            r1Container.innerHTML += `
+                <div class="input-group">
+                    <label>攻擊 #${i+1}</label>
+                    <input type="text" id="r1-atk-${i}" data-index="${i}">
+                </div>
+            `;
+        }
+
+        // 🌟 4. 建立 WebSocket 連線
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const pathname = window.location.pathname;
+        const basePath = pathname.substring(0, pathname.lastIndexOf('/'));
+        const wsUrl = `${wsProtocol}//${window.location.host}${basePath}/ws`;
+        let ws;
+
+        function connect() {
+            ws = new WebSocket(wsUrl);
+            ws.onclose = () => setTimeout(connect, 3000);
+            ws.onmessage = (event) => updateUI(JSON.parse(event.data));
+        }
+
+        // 🌟 5. 畫面渲染與狀態更新邏輯
+        function updateUI(state) {
+            const teamData = state.teams[TEAM];
+
+            // 更新計時器與標題
+            const phaseMap = {
+                "WAIT_R1": "第一輪：準備中", "R1_RUNNING": "第一輪：盲打佈局",
+                "R1_EVAL": "第一輪：系統開獎中", "WAIT_R2": "第二輪：準備中",
+                "R2_RUNNING": "第二輪：即時熱戰", "END": "戰鬥結束", "FINAL": "🏆 最終結算"
+            };
+            document.getElementById('phase-display').innerText = phaseMap[state.phase] || state.phase;
+            const mins = String(Math.floor(state.time_remaining / 60)).padStart(2, '0');
+            const secs = String(state.time_remaining % 60).padStart(2, '0');
+            document.getElementById('timer-display').innerText = state.timer_running ? `⏱️ ${mins}:${secs}` : "⏳ 鎖定中";
+            document.getElementById('team-score').innerText = teamData.score;
+
+            // 更新關鍵字
+            document.getElementById('keyword-container').innerHTML = state.keywords.map(k => `<span class="keyword-tag">${k}</span>`).join('');
+
+            // 切換 R1 / R2 視圖
+            const isR1 = ["WAIT_R1", "R1_RUNNING", "R1_EVAL"].includes(state.phase);
+            document.getElementById('view-r1').classList.toggle('active', isR1);
+            document.getElementById('view-r2').classList.toggle('active', !isR1);
+
+            // 處理鎖定遮罩
+            const overlay = document.getElementById('lock-overlay');
+            const lockMsg = document.getElementById('lock-msg');
+            const leftPanel = document.querySelector('.left-panel');
+            
+            // 判斷當前是否處於「鎖定階段」
+            const isLocked = ["WAIT_R1", "WAIT_R2", "R1_EVAL", "END", "FINAL"].includes(state.phase);
+
+            if (state.phase === "WAIT_R1" || state.phase === "WAIT_R2") {
+                lockMsg.innerText = "⏳ 準備階段，請等待開始指令...";
+                overlay.classList.add('active');
+            } else if (state.phase === "R1_EVAL" || state.phase === "END" || state.phase === "FINAL") {
+                lockMsg.innerText = "🔒 輸入已鎖定，請看右方戰報！";
+                overlay.classList.add('active');
+            } else {
+                overlay.classList.remove('active');
+            }
+
+            // 1. 隱藏卷軸，不准往下滾
+            leftPanel.style.overflowY = isLocked ? 'hidden' : 'auto';
+
+            // 2. 地毯式搜尋：抓出左側面板「所有的」 input、textarea、button
+            const allInteractables = document.querySelectorAll('.left-panel input, .left-panel textarea, .left-panel button');
+            
+            allInteractables.forEach(el => {
+                el.disabled = isLocked;
+                // 視覺上直接把它們變淡，讓小隊員明確知道不能按了
+                el.style.opacity = isLocked ? "0.4" : "1";
+                el.style.cursor = isLocked ? "not-allowed" : "auto";
+            });
+
+            // 同步草稿 (僅當使用者沒有在該輸入框打字時才覆蓋，防止游標亂跳)
+            if (document.activeElement.id !== 'r1-def') document.getElementById('r1-def').value = teamData.defense;
+            if (document.activeElement.id !== 'r2-def') document.getElementById('r2-def').value = teamData.defense;
+            
+            for(let i=0; i<10; i++) {
+                const el = document.getElementById(`r1-atk-${i}`);
+                if (document.activeElement !== el) el.value = teamData.r1_attacks[i] || "";
+            }
+
+            // R2 冷卻機制處理
+            const btnFire = document.getElementById('btn-fire');
+            const cdDisplay = document.getElementById('cd-display');
+            if (state.phase === "R2_RUNNING") {
+                if (teamData.cd_remaining > 0) {
+                    btnFire.disabled = true;
+                    btnFire.innerText = `冷卻中 (${teamData.cd_remaining}s)`;
+                    cdDisplay.style.display = "block";
+                    cdDisplay.innerText = `⏳ 武器冷卻: ${teamData.cd_remaining}s`;
+                } else {
+                    btnFire.disabled = false;
+                    btnFire.innerText = "🚀 發射攻擊";
+                    cdDisplay.style.display = "none";
+                }
+            } else {
+                cdDisplay.style.display = "none";
+            }
+
+            // 渲染戰報 (氣泡 UI)
+            const histHtml = teamData.history.map(log => {
+                const isSuccess = log.success;
+                const hitText = isSuccess ? `<div class="log-hits">🎯 成功逼出: ${log.hits.join(', ')} (+${log.points}分)</div>` : "";
+                const icon = isSuccess ? "💥" : "🛡️";
+                const status = isSuccess ? "破防成功" : "遭到防禦";
+                
+                return `
+                    <div class="log-bubble ${isSuccess ? 'success' : 'fail'}">
+                        <div class="log-header">
+                            <span>${log.prefix} | ${icon} ${status}</span>
+                            <span style="color: #64748b; font-size: 0.9rem;">[${log.timestamp}]</span>
+                        </div>
+                        ${hitText}
+                        <div class="log-content">${log.llm_output.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('history-container').innerHTML = histHtml || "<p style='color: #64748b; text-align: center;'>尚無紀錄。</p>";
+        }
+
+        // 🌟 6. 綁定輸入事件 (傳送資料給後端)
+        document.getElementById('r1-def').addEventListener('input', (e) => {
+            ws.send(JSON.stringify({ action: "sync_draft", team: TEAM, type: "def", index: 0, text: e.target.value }));
+        });
+
+        for(let i=0; i<10; i++) {
+            document.getElementById(`r1-atk-${i}`).addEventListener('input', (e) => {
+                ws.send(JSON.stringify({ action: "sync_draft", team: TEAM, type: "atk", index: i, text: e.target.value }));
+            });
+        }
+
+        function updateDefense() {
+            const text = document.getElementById('r2-def').value;
+            ws.send(JSON.stringify({ action: "update_defense", team: TEAM, text: text }));
+            alert("✅ 防禦已覆蓋！");
+        }
+
+        function launchAttack() {
+            const text = document.getElementById('r2-atk').value;
+            if(!text.trim()) return alert("⚠️ 攻擊指令不能為空！");
+            ws.send(JSON.stringify({ action: "launch_attack", team: TEAM, text: text }));
+            document.getElementById('r2-atk').value = ""; // 發射後清空輸入框
+        }
+
+        connect();
+        
+        async function doLogout() {
+            if (!confirm("確定要登出嗎？")) return;
+            
+            // 自動偵測 Base Path
+            const pathname = window.location.pathname;
+            const basePath = pathname.substring(0, pathname.lastIndexOf('/'));
+            
+            try {
+                await fetch(`${basePath}/api/logout`, { method: 'POST' });
+                window.location.href = `${basePath}/login`; // 登出後跳轉回登入大廳
+            } catch (err) {
+                alert("登出失敗，請檢查網路連線。");
+            }
+        }
+    </script>
+</body>
+</html>

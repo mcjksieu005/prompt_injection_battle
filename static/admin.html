@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 攻防戰 - 關主後台</title>
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --panel-bg: #ffffff;
+            --text-main: #1e293b;
+            --primary: #3b82f6;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --border: #e2e8f0;
+            --radius: 8px;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-color); color: var(--text-main); padding: 20px; max-width: 900px; margin: 0 auto; }
+        .panel { background: var(--panel-bg); padding: 20px; border-radius: var(--radius); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; border: 1px solid var(--border); }
+        h1, h2, h3 { margin-top: 0; }
+        .status-bar { display: flex; justify-content: space-between; font-size: 1.2rem; font-weight: bold; padding: 15px; background: #e0f2fe; border-radius: var(--radius); margin-bottom: 20px; }
+        .scores { display: flex; gap: 20px; font-size: 1.5rem; }
+        .red-score { color: var(--danger); }
+        .blue-score { color: var(--primary); }
+        
+        button { padding: 10px 15px; border: none; border-radius: var(--radius); cursor: pointer; font-size: 1rem; font-weight: bold; transition: opacity 0.2s; margin: 5px; }
+        button:hover { opacity: 0.8; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        input[type="text"], textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; box-sizing: border-box; font-family: monospace; }
+        
+        #connection-status { text-align: center; padding: 10px; font-weight: bold; color: white; background: var(--danger); border-radius: var(--radius); margin-bottom: 20px; display: none; }
+        .connected { background: var(--success) !important; }
+    </style>
+</head>
+<body>
+
+    <div id="connection-status">連線中...</div>
+
+    <div class="status-bar">
+        <div id="phase-display">階段：載入中...</div>
+        <div id="timer-display">⏱️ 00:00</div>
+        <div class="scores">
+            <span class="red-score">🔴 <span id="score-red">0</span></span>
+            <span class="blue-score">🔵 <span id="score-blue">0</span></span>
+        </div>
+        <button class="btn-danger" onclick="doLogout()">🚪 登出系統</button>
+    </div>
+
+    <div class="panel">
+        <h2>🎬 賽程控制</h2>
+        <div class="control-grid">
+            <button class="btn-primary" onclick="setPhase('WAIT_R1', 0)">1️⃣ 第一輪準備畫面</button>
+            <button class="btn-success" onclick="setPhase('R1_RUNNING', 10)">2️⃣ 開始第一輪 (10分)</button>
+            <button class="btn-danger" onclick="setPhase('R1_EVAL', 0)">⏹️ 鎖定 R1 並開獎</button>
+            
+            <button class="btn-primary" onclick="setPhase('WAIT_R2', 0)">3️⃣ 第二輪準備畫面</button>
+            <button class="btn-success" onclick="setPhase('R2_RUNNING', 10)">4️⃣ 開始第二輪 (10分)</button>
+            <button class="btn-danger" onclick="setPhase('END', 0)">⏹️ 鎖定 R2</button>
+            
+            <button class="btn-success" onclick="setPhase('FINAL', 0)" style="grid-column: span 2;">🏆 5️⃣ 結算最終勝負</button>
+            <button class="btn-danger" onclick="resetGame()">⚠️ 重置遊戲</button>
+
+            <button class="btn-primary" style="background: #8b5cf6;" onclick="window.open('scoreboard', '_blank')">📺 另開大螢幕記分板</button>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>⚙️ 遊戲設定 (即時同步至前端)</h2>
+        <label>Base System Message:</label>
+        <textarea id="in-sysmsg" rows="3"></textarea>
+        
+        <label>目標關鍵字 (以半形逗號分隔):</label>
+        <textarea id="in-keywords" rows="2"></textarea>
+        
+        <button class="btn-primary" onclick="saveSettings()">💾 儲存設定</button>
+    </div>
+
+    <div class="panel">
+        <h3>📜 系統事件日誌</h3>
+        <div id="admin-logs" style="height: 150px; overflow-y: auto; background: #f8fafc; padding: 10px; border: 1px solid var(--border); font-family: monospace; font-size: 0.9rem;"></div>
+    </div>
+
+    <script>
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const pathname = window.location.pathname;
+        const basePath = pathname.substring(0, pathname.lastIndexOf('/'));
+        const wsUrl = `${wsProtocol}//${window.location.host}${basePath}/ws`;
+        let ws;
+
+        function connect() {
+            ws = new WebSocket(wsUrl);
+            const statusEl = document.getElementById('connection-status');
+            
+            ws.onopen = () => {
+                statusEl.textContent = "✅ 已連線至伺服器";
+                statusEl.className = "connected";
+                statusEl.style.display = "block";
+                setTimeout(() => statusEl.style.display = "none", 2000);
+            };
+
+            ws.onclose = () => {
+                statusEl.textContent = "❌ 連線中斷，嘗試重新連線...";
+                statusEl.className = "";
+                statusEl.style.display = "block";
+                setTimeout(connect, 3000);
+            };
+
+            ws.onmessage = (event) => {
+                const state = JSON.parse(event.data);
+                updateDashboard(state);
+            };
+        }
+
+        function updateDashboard(state) {
+            // 階段翻譯
+            const phaseMap = {
+                "WAIT_R1": "第一輪：準備中", "R1_RUNNING": "第一輪：盲打佈局 (進行中)",
+                "R1_EVAL": "第一輪：系統結算中", "WAIT_R2": "第二輪：準備中",
+                "R2_RUNNING": "第二輪：熱戰進行中", "END": "戰鬥結束", "FINAL": "🏆 最終結算"
+            };
+            document.getElementById('phase-display').innerText = `🚨 階段：${phaseMap[state.phase] || state.phase}`;
+            
+            // 計時器
+            const mins = String(Math.floor(state.time_remaining / 60)).padStart(2, '0');
+            const secs = String(state.time_remaining % 60).padStart(2, '0');
+            document.getElementById('timer-display').innerText = state.timer_running ? `⏱️ ${mins}:${secs}` : "⏳ 暫停/鎖定";
+
+            // 分數
+            document.getElementById('score-red').innerText = state.teams.red.score;
+            document.getElementById('score-blue').innerText = state.teams.blue.score;
+
+            // 如果輸入框沒有被選中 (focus)，才更新設定內容，避免打字到一半被覆蓋
+            if (document.activeElement.id !== 'in-sysmsg') document.getElementById('in-sysmsg').value = state.base_system_msg;
+            if (document.activeElement.id !== 'in-keywords') document.getElementById('in-keywords').value = state.keywords.join(', ');
+
+            // 日誌
+            const logsHtml = state.event_logs.map(log => `<div>${log}</div>`).join('');
+            document.getElementById('admin-logs').innerHTML = logsHtml;
+        }
+
+        // --- 發送指令到後端 ---
+        function setPhase(phase, mins) {
+            ws.send(JSON.stringify({ action: "admin_set_phase", phase: phase, mins: mins }));
+        }
+
+        function saveSettings() {
+            ws.send(JSON.stringify({
+                action: "admin_settings",
+                base_system_msg: document.getElementById('in-sysmsg').value,
+                keywords: document.getElementById('in-keywords').value
+            }));
+        }
+
+        function resetGame() {
+            if(confirm("確定要重置整個遊戲嗎？分數與紀錄將被清空！")) {
+                ws.send(JSON.stringify({ action: "admin_reset" }));
+            }
+        }
+
+        // 啟動連線
+        connect();
+        
+        async function doLogout() {
+            if (!confirm("確定要登出嗎？")) return;
+            
+            // 自動偵測 Base Path
+            const pathname = window.location.pathname;
+            const basePath = pathname.substring(0, pathname.lastIndexOf('/'));
+            
+            try {
+                await fetch(`${basePath}/api/logout`, { method: 'POST' });
+                window.location.href = `${basePath}/login`; // 登出後跳轉回登入大廳
+            } catch (err) {
+                alert("登出失敗，請檢查網路連線。");
+            }
+        }
+    </script>
+</body>
+</html>

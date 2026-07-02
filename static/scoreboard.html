@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 攻防戰 - 大螢幕記分板</title>
+    <style>
+        :root {
+            /* 美術團隊看這裡：可以直接改這些變數換皮！ */
+            --bg-dark: #121826;
+            --text-light: #f8fafc;
+            --red-team: #ef4444;
+            --blue-team: #3b82f6;
+            --accent: #f59e0b;
+            --panel-bg: rgba(255, 255, 255, 0.05);
+            --border-radius: 16px;
+        }
+        
+        body { margin: 0; padding: 2vh 5vw; background-color: var(--bg-dark); color: var(--text-light); font-family: 'Segoe UI', sans-serif; overflow: hidden; /* 防止投影時出現滾動條 */ }
+        
+        /* 頂部資訊列 */
+        .header { text-align: center; margin-bottom: 30px; }
+        .title { font-size: 3rem; margin: 0; text-transform: uppercase; letter-spacing: 2px; }
+        .phase-timer { font-size: 2rem; color: var(--accent); font-weight: bold; margin-top: 10px; }
+
+        /* 分數看板區塊 */
+        .score-board { display: flex; justify-content: space-between; gap: 40px; margin-bottom: 40px; }
+        .team-card { flex: 1; background: var(--panel-bg); border-radius: var(--border-radius); padding: 30px; text-align: center; border: 2px solid transparent; }
+        .team-card.red { border-color: var(--red-team); box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); }
+        .team-card.blue { border-color: var(--blue-team); box-shadow: 0 0 20px rgba(59, 130, 246, 0.2); }
+        .team-name { font-size: 2.5rem; margin: 0 0 10px 0; }
+        .team-score { font-size: 8rem; font-weight: bold; margin: 0; line-height: 1; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        .red .team-name { color: var(--red-team); }
+        .blue .team-name { color: var(--blue-team); }
+
+        /* 最終勝利橫幅 */
+        #final-banner { display: none; background: linear-gradient(45deg, #f59e0b, #fbbf24); color: #000; padding: 30px; border-radius: var(--border-radius); text-align: center; font-size: 2.5rem; font-weight: bold; margin-bottom: 40px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); white-space: pre-wrap; }
+
+        /* 全場廣播日誌 */
+        .broadcast-panel { background: var(--panel-bg); border-radius: var(--border-radius); padding: 20px; height: 30vh; overflow-y: hidden; }
+        .broadcast-title { font-size: 1.5rem; color: var(--accent); margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+        #broadcast-logs { font-size: 1.5rem; line-height: 1.6; display: flex; flex-direction: column; gap: 10px; }
+        .log-entry { animation: fadeIn 0.5s ease-out; background: rgba(0,0,0,0.3); padding: 10px 15px; border-left: 5px solid #64748b; border-radius: 4px; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 class="title">🏆 AI 關鍵字攻防戰</h1>
+        <div class="phase-timer" id="phase-timer">等待連線中...</div>
+    </div>
+
+    <div id="final-banner"></div>
+
+    <div class="score-board">
+        <div class="team-card red">
+            <h2 class="team-name">🔴 TEAM RED</h2>
+            <p class="team-score" id="red-score">0</p>
+        </div>
+        <div class="team-card blue">
+            <h2 class="team-name">🔵 TEAM BLUE</h2>
+            <p class="team-score" id="blue-score">0</p>
+        </div>
+    </div>
+
+    <div class="broadcast-panel">
+        <h3 class="broadcast-title">📡 即時戰鬥廣播</h3>
+        <div id="broadcast-logs">
+            <!-- 戰報會即時插入這裡 -->
+        </div>
+    </div>
+
+    <script>
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const pathname = window.location.pathname;
+        const basePath = pathname.substring(0, pathname.lastIndexOf('/'));
+        const wsUrl = `${wsProtocol}//${window.location.host}${basePath}/ws`;
+        let ws;
+
+        function connect() {
+            ws = new WebSocket(wsUrl);
+            ws.onclose = () => setTimeout(connect, 3000);
+            ws.onmessage = (event) => updateBoard(JSON.parse(event.data));
+        }
+
+        function updateBoard(state) {
+            // 處理標題與時間
+            const phaseMap = {
+                "WAIT_R1": "第一輪：準備中", "R1_RUNNING": "第一輪：盲打佈局",
+                "R1_EVAL": "第一輪：系統開獎中", "WAIT_R2": "第二輪：準備中",
+                "R2_RUNNING": "第二輪：即時熱戰", "END": "戰鬥結束", "FINAL": "最終結算"
+            };
+            const mins = String(Math.floor(state.time_remaining / 60)).padStart(2, '0');
+            const secs = String(state.time_remaining % 60).padStart(2, '0');
+            const timeStr = state.timer_running ? `${mins}:${secs}` : "--:--";
+            document.getElementById('phase-timer').innerText = `${phaseMap[state.phase] || state.phase} | ⏱️ ${timeStr}`;
+
+            // 處理分數
+            document.getElementById('red-score').innerText = state.teams.red.score;
+            document.getElementById('blue-score').innerText = state.teams.blue.score;
+
+            // 最終結算橫幅
+            const banner = document.getElementById('final-banner');
+            if (state.phase === "FINAL") {
+                banner.innerText = state.final_winner_text;
+                banner.style.display = "block";
+            } else {
+                banner.style.display = "none";
+            }
+
+            // 廣播日誌 (只顯示最新的 5 筆，避免塞滿螢幕)
+            const logsContainer = document.getElementById('broadcast-logs');
+            logsContainer.innerHTML = state.event_logs.slice(0, 5).map(log => 
+                `<div class="log-entry">${log}</div>`
+            ).join('');
+        }
+
+        connect();
+    </script>
+</body>
+</html>

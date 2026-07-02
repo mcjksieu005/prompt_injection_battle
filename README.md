@@ -1,4 +1,4 @@
-# AI 關鍵字攻防 ─ 二驗企劃書
+# AI 關鍵字攻防 - 三驗企劃書
 
 資訊營AI組 周宗穎
 GitHub連結：https://github.com/mcjksieu005/prompt_injection_battle
@@ -7,13 +7,16 @@ GitHub連結：https://github.com/mcjksieu005/prompt_injection_battle
 
 ## 測試網站連結
 
-- 記分板：http://ws1.csie.ntu.edu.tw:6767/scoreboard/
-- 後台：http://ws1.csie.ntu.edu.tw:6767/admin/
+- 記分板：http://ws1.csie.ntu.edu.tw:6767/prompt_battle/scoreboard/
+- 後台：http://ws1.csie.ntu.edu.tw:6767/prompt_battle/admin/
     - 帳號：admin
-    - 密碼：camp2026
-- 紅隊：http://ws1.csie.ntu.edu.tw:6767/team/red/
-- 藍隊：http://ws1.csie.ntu.edu.tw:6767/team/blue/
-
+    - 密碼：6767
+- 紅隊：http://ws1.csie.ntu.edu.tw:6767/prompt_battle/team?team=red
+    - 帳號：red
+    - 密碼：114514
+- 藍隊：http://ws1.csie.ntu.edu.tw:6767/prompt_battle/team?team=blue
+    - 帳號：blue
+    - 密碼：1919810
 ---
 
 ## 遊戲簡介
@@ -48,25 +51,29 @@ GitHub連結：https://github.com/mcjksieu005/prompt_injection_battle
 
 ## 運行架構與部署說明 (以下是AI生的)
 
-本系統專為多人即時對抗設計，目前採用 Python 原生全端框架進行快速開發與概念驗證，並已規劃後續的進階重構路線。
+這是一個基於 FastAPI 與 WebSockets 開發的即時 AI 提示詞攻防遊戲系統。專為營隊活動設計，具備低延遲廣播、雙隊獨立介面、關主後台管理與大螢幕記分板功能。
 
-### 🛠️ 當前實作方法
-目前的架構採用 **FastAPI + Gradio** 的混合模式，兼具輕量與即時性：
-* **狀態管理 (State Machine)**：所有遊戲狀態（包含分數、防禦指令、倒數計時）皆儲存於後端記憶體的 `match_state` 字典中。
-* **併發安全 (Concurrency Control)**：採用 `threading.RLock()` 可重入鎖，確保雙方小隊同時送出指令或背景計時器觸發時，資料不會發生 Race Condition。
-* **單頁應用驅動 (SPA-like UI)**：捨棄傳統的分頁重新整理，前端透過 `gr.Timer` 配合後端狀態，利用 `gr.update(visible=...)` 強制同步雙方的遊戲畫面與階段切換。
-* **模型推理解耦**：使用 OpenRouter API 呼叫雲端 `qwen-2.5-7b-instruct` 模型，將繁重的 LLM 推理運算外包，確保本地伺服器/工作站只需專注於處理 Web 請求。
+### 📂 專案架構 (基於 FastAPI + Vanilla JS)
+
+*   `backend.py`: 系統後端核心 (狀態機、WebSocket 廣播中心、API 路由)。
+*   `static/`: 前端靜態資源資料夾。
+    *   `login.html`: 中央登入大廳 (具備 Cookie 身分驗證)。
+    *   `admin.html`: 關主控制台 (賽程切換、設定同步)。
+    *   `team.html`: 雙方小隊操作終端 (紅藍兩隊共用，依 URL 參數動態渲染)。
+    *   `scoreboard.html`: 大螢幕投影專用記分板。
+*   `old(gradio)/`: 舊版概念驗證 (POC) 程式碼備份。
 
 ### 💻 環境建置與啟動流程
 
-請確保運行環境已安裝 Python 3.10 以上版本。
+建議使用 Python 3.10 以上版本。
 
 **1. 建立並啟動虛擬環境**
 ```bash
 python -m venv venv
-# Windows 系統:
+
+# Windows
 venv\Scripts\activate
-# macOS/Linux 系統:
+# Mac/Linux
 source venv/bin/activate
 ```
 
@@ -76,30 +83,36 @@ pip install -r requirements.txt
 ```
 
 **3. 設定環境變數**
-在專案根目錄複製一份 .env.example 並重新命名為 .env，填入你的 API 密鑰：
+請複製 .env.example 並重新命名為 .env，接著填入你的設定值：
 ```Ini
-OPENROUTER_API_KEY=sk-or-v1-你的真實金鑰
+OPENROUTER_API_KEY=你的_API_KEY
+BASE_PATH=/prompt_battle
+ADMIN_PWD=admin123
+RED_PWD=red123
+BLUE_PWD=blue123
 ```
 
 **4. 啟動伺服器**
 ```bash
-python full.py
+python backend.py
 ```
-啟動後，伺服器將運行於 http://0.0.0.0:6767 。參與者可透過瀏覽器進入 /team/red、/team/blue 等對應路由進行遊戲。
+伺服器啟動後，將會在 http://0.0.0.0:6767 運行。
 
----
+### 🔗 系統存取路徑
 
-## 預期改進方向
+所有使用者請先進入登入大廳，系統會依據身分自動導向：
 
-為了符合營隊美宣需求並提供更極致的電競級體驗，本專案預計於後續進行前後端分離 (Frontend-Backend Separation) 重構：
+- 入口網站 (登入大廳)：http://localhost:6767/prompt_battle/login
+- 強制跳轉目標網址 (供參考)：
+    - 關主後台：.../prompt_battle/admin
+    - 記分板：.../prompt_battle/scoreboard
+    - 紅隊終端：.../prompt_battle/team?team=red
+    - 藍隊終端：.../prompt_battle/team?team=blue
 
-後端架構升級 (Flask / FastAPI + WebSocket)：
-保留現有的核心遊戲邏輯 (game_logic.py)，將通訊協定從 Gradio 輪詢全面升級為 Socket.IO (WebSocket) 雙向連線，以降低伺服器負載並達成毫秒級延遲。
+### 🛡️ 安全性設計
 
-前端介面重寫 (原生 HTML/JS/CSS)：
-徹底移除 Gradio 的 UI 限制，改用原生網頁語言撰寫，以便完全無縫套用營隊的「海島風情」視覺主題。
-
-加入共編提示互動 (Presence UI)：
-藉由 WebSocket 的優勢，實作類似 Google Docs 的「正在輸入...」與游標鎖定提示，解決多台電腦操作同一隊伍畫面時的 UX 衝突問題。
+- Cookie 攔截：未經登入無法存取任何遊戲頁面。
+- 路由隔離：小隊員無法透過修改 URL 參數進入敵對陣營或關主後台。
+- 動態禁用：鎖定階段時，前端輸入框將強制觸發系統層級的 disabled，防堵任何鍵盤穿透操作。
 
 ---
