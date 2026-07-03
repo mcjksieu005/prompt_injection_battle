@@ -12,12 +12,23 @@
             --bg-panel: #ffffff;
             --text-main: #1e293b;
             --border-color: #e2e8f0;
-            --success-color: #10b981;
+            --overlay-bg: rgba(255, 255, 255, 0.8);
+            --success-color: #10b981;   
             --danger-color: #ef4444;
             --radius: 12px;
         }
 
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-page); color: var(--text-main); margin: 0; padding: 20px; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-page: #0f172a;
+                --bg-panel: #1e293b;
+                --text-main: #f8fafc;
+                --border-color: #334155;
+                --overlay-bg: rgba(15, 23, 42, 0.8);
+            }
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-page); color: var(--text-main); margin: 0; padding: 20px; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; transition: background-color 0.3s, color 0.3s; }
         
         /* 頂部狀態列 */
         .top-bar { background: var(--bg-panel); border-top: 5px solid var(--theme-color); border-radius: var(--radius); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; flex-shrink: 0; }
@@ -29,24 +40,24 @@
         .main-container { display: flex; gap: 20px; flex: 1; min-height: 0; }
         .panel { background: var(--bg-panel); border-radius: var(--radius); padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow-y: auto; position: relative; }
         .left-panel { flex: 1; border-right: 2px solid var(--border-color); }
-        .right-panel { flex: 1; background: #f1f5f9; }
+        .right-panel { flex: 1; background: var(--bg-page); border-left: 1px solid var(--border-color); }
 
         /* 關鍵字看板 */
-        .keyword-board { background: #fffbeb; border: 1px solid #fde68a; padding: 15px; border-radius: var(--radius); margin-bottom: 20px; }
-        .keyword-tag { display: inline-block; background: white; border: 2px solid var(--theme-color); color: var(--theme-color); padding: 5px 10px; border-radius: 6px; font-family: monospace; font-weight: bold; margin: 4px; }
+        .keyword-board { background: var(--bg-panel); border: 2px solid var(--theme-color); padding: 15px; border-radius: var(--radius); margin-bottom: 20px; }
+        .keyword-tag { display: inline-block; background: var(--bg-page); border: 2px solid var(--theme-color); color: var(--theme-color); padding: 5px 10px; border-radius: 6px; font-family: monospace; font-weight: bold; margin: 4px; transition: background-color 0.3s; }
 
         /* 輸入區塊與遮罩 */
         .input-group { margin-bottom: 15px; }
-        .input-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #475569; }
-        input[type="text"], textarea { width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; font-family: monospace; font-size: 14px; box-sizing: border-box; transition: border-color 0.2s; }
-        input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--theme-color); box-shadow: 0 0 0 3px rgba(var(--theme-color), 0.2); }
+        .input-group label { display: block; font-weight: bold; margin-bottom: 5px; color: var(--text-main); transition: color 0.3s; }
+        input[type="text"], textarea { width: 100%; padding: 12px; background: var(--bg-page); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 8px; font-family: monospace; font-size: 14px; box-sizing: border-box; transition: border-color 0.2s; }
+        input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--theme-color); box-shadow: 0 0 0 3px rgba(var(--theme-color), 0.2); background: var(--bg-panel); }
         
         button { background: var(--theme-color); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: opacity 0.2s; width: 100%; }
         button:hover:not(:disabled) { opacity: 0.9; }
         button:disabled { background: #cbd5e1; cursor: not-allowed; }
 
         /* 鎖定遮罩 (等待/結算階段時顯示) */
-        .lock-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(2px); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 10; border-radius: var(--radius); }
+        .lock-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--overlay-bg); backdrop-filter: blur(2px); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 10; border-radius: var(--radius); transition: background-color 0.3s; }
         .lock-overlay.active { display: flex; }
         .lock-msg { background: var(--theme-color); color: white; padding: 15px 30px; border-radius: 30px; font-size: 1.2rem; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
 
@@ -61,6 +72,48 @@
         /* 階段視圖切換 */
         .view-section { display: none; }
         .view-section.active { display: block; }
+
+        /* --- 修正文字輸入框 (Textarea & Input) --- */
+        textarea, input[type="text"] {
+            width: 100%;
+            max-width: 100%; /* 防止內容過長時撐破父容器 */
+            box-sizing: border-box; /* 讓 padding 算在寬度內，這非常重要 */
+            resize: vertical; /* 允許小隊員上下拉動調整高度，但禁止左右拉破壞版面 */
+            white-space: pre-wrap; /* 確保長字串或連續空白能正確自然換行 */
+            word-wrap: break-word; /* 避免英文字母過長不斷行 */
+        }
+
+        /* 針對登出按鈕 */
+        .logout-btn { /* 請替換成你實際登出按鈕的 class 名稱 */
+            width: auto !important; /* 強制覆蓋掉可能被設定到的 100% 寬度 */
+            flex-grow: 0; /* 阻止按鈕去搶佔旁邊的空白空間 */
+            padding: 8px 24px; /* 給它一個正常的左右內邊距 */
+            white-space: nowrap;
+            margin-left: auto; /* (關鍵) 這招可以把縮短後的按鈕推到畫面的最右邊 */
+        }
+
+        /* 假設這些資訊都包在一個叫 status-info 的區塊內 */
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 15px; /* 增加各個元素之間的左右間距 */
+        }
+
+        /* 強制所有文字橫排，絕對不准換行 */
+        .status-info span, 
+        .status-info div {
+            white-space: nowrap; 
+        }
+
+        /* 針對那個紅色的「總分」框框做調整 */
+        .score-badge { /* 請替換成你實際寫的 class 名稱，例如 .score-box */
+            display: inline-flex;
+            align-items: center;
+            gap: 8px; /* 讓「總分：」跟數字「0」中間有一點空隙 */
+            padding: 8px 16px; /* 上下邊距變小，左右邊距拉大，框框就會變成橫的 */
+            border-radius: 8px; /* 調整成圓角矩形 */
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -283,7 +336,7 @@
             ws.send(JSON.stringify({ action: "update_defense", team: TEAM, text: text }));
             alert("✅ 防禦已覆蓋！");
         }
-
+        
         function launchAttack() {
             const text = document.getElementById('r2-atk').value;
             if(!text.trim()) return alert("⚠️ 攻擊指令不能為空！");
