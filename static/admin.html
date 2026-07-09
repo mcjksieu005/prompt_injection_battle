@@ -100,9 +100,14 @@
             <button class="btn-success" onclick="setPhase('FINAL', 0)" style="grid-column: span 2;">🏆 5️⃣ 結算最終勝負</button>
             <button class="btn-danger" onclick="resetGame()">⚠️ 重置遊戲</button>
 
-            <button class="btn-primary" style="background: #8b5cf6;" onclick="window.open('scoreboard', '_blank')">📺 另開大螢幕記分板</button>
-        
-            <button class="btn-primary" style="background: #10b981; grid-column: span 3;" onclick="window.open(`${basePath}/api/download_log`, '_blank')">📥 一鍵下載完整賽局戰報 (JSON)</button>
+            <div style="display: flex; gap: 15px; margin-top: 15px; width: 100%;">
+                <button onclick="window.open('board', '_blank')" style="background: #a855f7; color: white; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; flex: 1; font-size: 1rem;">
+                    📺 另開大螢幕記分板
+                </button>
+                <button onclick="downloadJSON()" style="background: #10b981; color: white; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; flex: 2; font-size: 1rem;">
+                    📥 一鍵下載完整賽局戰報 (JSON)
+                </button>
+            </div>
         </div>
     </div>
 
