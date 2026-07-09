@@ -100,13 +100,16 @@
             <button class="btn-success" onclick="setPhase('FINAL', 0)" style="grid-column: span 2;">🏆 5️⃣ 結算最終勝負</button>
             <button class="btn-danger" onclick="resetGame()">⚠️ 重置遊戲</button>
 
-            <div style="display: flex; gap: 15px; margin-top: 15px; width: 100%;">
-                <button onclick="window.open('board', '_blank')" style="background: #a855f7; color: white; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; flex: 1; font-size: 1rem;">
+            <div style="display: flex; gap: 15px; margin-top: 15px; width: 100%; grid-column: 1 / -1;">
+                
+                <button onclick="window.open('board', '_blank')" style="background: #a855f7; color: white; padding: 10px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; flex: 1; font-size: 1rem; white-space: nowrap;">
                     📺 另開大螢幕記分板
                 </button>
-                <button onclick="downloadJSON()" style="background: #10b981; color: white; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; flex: 2; font-size: 1rem;">
+                
+                <button onclick="downloadJSON()" style="background: #10b981; color: white; padding: 10px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; flex: 1; font-size: 1rem; white-space: nowrap;">
                     📥 一鍵下載完整賽局戰報 (JSON)
                 </button>
+                
             </div>
         </div>
     </div>
