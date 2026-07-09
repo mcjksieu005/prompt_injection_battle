@@ -123,6 +123,14 @@
             </label>
         </div>
 
+        <div style="margin-top: 15px; margin-bottom: 15px;">
+            <label style="font-weight: bold; display: block; margin-bottom: 5px;">⏳ 攻擊冷卻時間 (秒)：</label>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="number" id="admin-cd-time" value="7" min="0" style="width: 80px; padding: 8px; border-radius: 6px; border: 1px solid #ccc;">
+                <button onclick="updateCDTime()" style="background: #3b82f6; color: white; padding: 8px 15px; border-radius: 6px; border: none; cursor: pointer;">💾 更新冷卻時間</button>
+            </div>
+        </div>
+
         <label>選擇語言模型 (Model 特性與難度):</label>
         <select id="in-model" style="width: 100%; padding: 10px; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 15px; font-size: 1rem;">
             <optgroup label="🟢【Level 1】經典輕量區 (極易攻破 / 建立成就感)">
@@ -260,6 +268,12 @@
         function adjustTime(delta) {
             if(!confirm(`確定要 ${delta > 0 ? '增加' : '減少'} 1 分鐘嗎？`)) return;
             ws.send(JSON.stringify({ action: "admin_adjust_time", delta: delta }));
+        }
+
+        function updateCDTime() {
+            const cdValue = parseInt(document.getElementById('admin-cd-time').value) || 7;
+            ws.send(JSON.stringify({ action: "admin_set_cd", cd: cdValue }));
+            alert(`✅ 已將攻擊冷卻時間更新為 ${cdValue} 秒！`);
         }
 
         // 啟動連線

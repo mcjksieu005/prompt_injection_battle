@@ -558,6 +558,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         # 備註：如果扣到時間小於現在時間，你原本背景監控時間的 loop 
                         # 就會自動觸發時間到的邏輯 (例如自動結算)，所以這裡不用多寫判斷！
 
+                # --- 新增：關主設定冷卻時間 ---
+                elif action == "admin_set_cd":
+                    match_state[team]["cd_remaining"] = match_state.get("cd_duration", 7)
+                    log_event(f"📢 關主已將攻擊冷卻時間調整為：{match_state['cd_duration']} 秒")
+
             # 任何操作完成後，廣播最新狀態給全體
             await manager.broadcast_state()
 
