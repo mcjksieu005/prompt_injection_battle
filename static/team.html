@@ -114,6 +114,24 @@
             border-radius: 8px; /* 調整成圓角矩形 */
             white-space: nowrap;
         }
+
+        #result-card {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9999; /* 確保它蓋在所有東西上面 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none; /* 預設不擋滑鼠點擊 */
+        }
+
+        /* 當有內容時，讓卡片變為可見且擋住操作 */
+        #result-card:has(div) {
+            pointer-events: auto;
+        }
     </style>
 </head>
 <body>
@@ -176,11 +194,13 @@
         <!-- 右側面板：戰報輸出 -->
         <div class="panel right-panel">
             <h2 style="margin-top: 0;">📜 即時戰報</h2>
-            <div id="history-container">
+            <div id="team-history">
                 <!-- JS 動態生成戰鬥日誌氣泡 -->
             </div>
         </div>
     </div>
+
+    <div id="result-card"></div>
 
     <script>
         // 🌟 1. 解析網址參數，決定隊伍身分
@@ -298,26 +318,131 @@
                 cdDisplay.style.display = "none";
             }
 
-            // 渲染戰報 (氣泡 UI)
-            const histHtml = teamData.history.map(log => {
+            // 🌟 1. 直接從網址列 (URL) 精準讀取自己是哪一隊
+            const urlParams = new URLSearchParams(window.location.search);
+            const myTeam = urlParams.get('team') || "red"; 
+            const oppTeam = myTeam === "red" ? "blue" : "red";
+            
+            // 防呆：確保 state.teams 存在才執行
+            if (!state.teams || !state.teams[myTeam]) return;
+
+            const myTeamData = state.teams[myTeam];
+            const oppTeamData = state.teams[oppTeam];
+
+            // 🌟 2. 將雙方的歷史紀錄合併
+            let combinedHistory = [];
+            if (myTeamData && Array.isArray(myTeamData.history)) {
+                myTeamData.history.forEach(log => combinedHistory.push({ ...log, isMine: true }));
+            }
+            if (oppTeamData && Array.isArray(oppTeamData.history)) {
+                oppTeamData.history.forEach(log => combinedHistory.push({ ...log, isMine: false }));
+            }
+
+            // 🌟 3. 安全排序 (就算 timestamp 缺失也不會崩潰)
+            combinedHistory.sort((a, b) => {
+                const timeA = a.timestamp || "00:00:00";
+                const timeB = b.timestamp || "00:00:00";
+                return timeB.localeCompare(timeA);
+            });
+
+            // 安全過濾函數
+            const escapeHTML = (str) => (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            // 🌟 4. 渲染合併後的戰報 (加入第一輪/第二輪前綴判斷)
+            const histHtml = combinedHistory.map(log => {
                 const isSuccess = log.success;
-                const hitText = isSuccess ? `<div class="log-hits">🎯 成功逼出: ${log.hits.join(', ')} (+${log.points}分)</div>` : "";
-                const icon = isSuccess ? "💥" : "🛡️";
-                const status = isSuccess ? "破防成功" : "遭到防禦";
+                const hitList = log.hits && log.hits.length > 0 ? log.hits.join(', ') : '無';
                 
-                return `
-                    <div class="log-bubble ${isSuccess ? 'success' : 'fail'}">
-                        <div class="log-header">
-                            <span>${log.prefix} | ${icon} ${status}</span>
-                            <span style="color: #64748b; font-size: 0.9rem;">[${log.timestamp}]</span>
+                // 標示是第幾題 (R1) 還是即時攻擊 (R2)
+                const roundPrefix = log.prefix || "攻擊";
+                
+                // 即使 R1 沒有記錄到 prompt，也會顯示「未記錄」而不會崩潰
+                const promptHtml = `<div style="margin-bottom: 8px; font-family: monospace; white-space: pre-wrap; word-break: break-all; background: rgba(255,255,255,0.6); padding: 5px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.05);">${escapeHTML(log.attack_prompt || "未記錄 (舊版第一輪盲打)")}</div>`;
+                const outputHtml = `<div style="font-family: monospace; white-space: pre-wrap; word-break: break-all; background: rgba(0,0,0,0.05); padding: 5px; border-radius: 4px; color: #374151;">${escapeHTML(log.llm_output || "無回應")}</div>`;
+
+                const attackerTeam = log.isMine ? myTeam : oppTeam;
+                const theme = attackerTeam === "red" ? {
+                    borderLeft: "#ef4444", bg: "#fef2f2", boxBorder: "#fecaca" 
+                } : {
+                    borderLeft: "#3b82f6", bg: "#eff6ff", boxBorder: "#bfdbfe" 
+                };
+
+                if (log.isMine) {
+                    // ⚔️ 【我方發起的攻擊】
+                    const titleHtml = isSuccess 
+                        ? `<span style="color: #059669; font-weight: bold;">🎯 破防成功 (逼出關鍵字: ${hitList})</span>` 
+                        : `<span style="color: #64748b; font-weight: bold;">🛡️ 遭到防禦 (無關鍵字)</span>`;
+                    
+                    return `
+                        <div class="log-bubble" style="border-left: 5px solid ${theme.borderLeft}; background: ${theme.bg}; padding: 12px; margin-bottom: 12px; border-radius: 6px; border: 1px solid ${theme.boxBorder};">
+                            <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 8px; display: flex; justify-content: space-between;">
+                                <span style="font-weight: bold; color: ${theme.borderLeft};">⚔️ 我方發起攻擊 (${roundPrefix})</span>
+                                <span>[${log.timestamp || '--:--'}]</span>
+                            </div>
+                            <div style="margin-bottom: 8px;">${titleHtml}</div>
+                            <strong>我方的 Prompt:</strong>
+                            ${promptHtml}
+                            <strong>敵方 AI 的回應:</strong>
+                            ${outputHtml}
                         </div>
-                        ${hitText}
-                        <div class="log-content">${log.llm_output.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-                    </div>
-                `;
+                    `;
+                } else {
+                    // 🚨 【敵方打過來的攻擊】
+                    const titleHtml = isSuccess 
+                        ? `<span style="color: #dc2626; font-weight: bold;">⚠️ 防線遭破 (洩漏關鍵字: ${hitList})</span>` 
+                        : `<span style="color: #059669; font-weight: bold;">🛡️ 成功擋下 (無關鍵字)</span>`;
+                    
+                    return `
+                        <div class="log-bubble" style="border-left: 5px solid ${theme.borderLeft}; background: ${theme.bg}; padding: 12px; margin-bottom: 12px; border-radius: 6px; border: 1px solid ${theme.boxBorder};">
+                            <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 8px; display: flex; justify-content: space-between;">
+                                <span style="font-weight: bold; color: ${theme.borderLeft};">🚨 敵方來襲 (${roundPrefix})</span>
+                                <span>[${log.timestamp || '--:--'}]</span>
+                            </div>
+                            <div style="margin-bottom: 8px;">${titleHtml}</div>
+                            <strong>敵方的 Prompt:</strong>
+                            ${promptHtml}
+                            <strong>我方 AI 的回應:</strong>
+                            ${outputHtml}
+                        </div>
+                    `;
+                }
             }).join('');
             
-            document.getElementById('history-container').innerHTML = histHtml || "<p style='color: #64748b; text-align: center;'>尚無紀錄。</p>";
+            document.getElementById('team-history').innerHTML = histHtml || '<div style="color: #94a3b8; text-align: center; padding: 20px;">目前尚無戰鬥紀錄</div>';
+            
+            // 🌟 在 updateUI 底部加入結算卡
+            const resultCard = document.getElementById('result-card');
+            if (state.phase === "FINAL") {
+                // 假設後端現在回傳的是一個字串，我們用 split 分隔標題與原因
+                // 如果後端回傳格式為 "標題|原因"，這裡用 split("|") 分開
+                // 為了簡單起見，我們直接顯示整個 winnerText
+                const winnerText = (state.final_winner_text || "").toString(); // 確保它一定是字串
+                const isRed = TEAM === 'red';
+                
+                // 簡單判斷：只要包含名字就是贏，包含平手就是平手
+                let title = "";
+                let color = "";
+                
+                if (winnerText.includes("平手")) {
+                    title = "🤝 平手！";
+                    color = "#3b82f6";
+                } else {
+                    const isMyWin = (isRed && winnerText.includes("紅隊")) || (!isRed && winnerText.includes("藍隊"));
+                    title = isMyWin ? "🏆 勝利！" : "😭 惜敗...";
+                    color = isMyWin ? "gold" : "#64748b";
+                }
+
+                resultCard.innerHTML = `
+                    <div style="background: white; padding: 40px; border-radius: 20px; text-align: center; border: 8px solid ${color};">
+                        <h1 style="font-size: 3rem; color: ${color};">${title}</h1>
+                        <p style="font-size: 1.2rem; color: #555; margin-top: 20px; line-height: 1.6;">
+                            ${winnerText.replace('\n', '<br>')}
+                        </p>
+                    </div>
+                `;
+            } else {
+                resultCard.innerHTML = "";
+            }
         }
 
         // 🌟 6. 綁定輸入事件 (傳送資料給後端)

@@ -12,6 +12,11 @@ from dotenv import load_dotenv
 import threading
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+import asyncio
+from fastapi.responses import JSONResponse
+
+# 新增一個全域鎖來防止 Race Condition (多個小隊員同時按鈕導致資料覆寫)
+state_lock = asyncio.Lock()
 
 # ==========================================
 # ⚙️ 系統設定與初始化
@@ -150,19 +155,31 @@ def log_event(msg):
 def get_winner_info():
     with state_lock:
         rs, bs = match_state['red']['score'], match_state['blue']['score']
-        if rs > bs: return "🎉 🔴 恭喜【紅隊】獲勝！ (總分較高)"
-        if bs > rs: return "🎉 🔵 恭喜【藍隊】獲勝！ (總分較高)"
         
-        rdl, bdl = len(match_state['red']['defense'].strip()), len(match_state['blue']['defense'].strip())
-        if rdl < bdl: return f"🎉 🔴 恭喜【紅隊】獲勝！\n\n【平手判定】紅隊防禦字數較少 ({rdl} < {bdl})"
-        if bdl < rdl: return f"🎉 🔵 恭喜【藍隊】獲勝！\n\n【平手判定】藍隊防禦字數較少 ({bdl} < {rdl})"
+        # 定義統計數據
+        red_atk = len([a for a in match_state['red']['r1_attacks'] if a.strip()]) + \
+                  len([h for h in match_state['red']['history'] if "即時攻擊" in h.get("prefix", "")])
+        blue_atk = len([a for a in match_state['blue']['r1_attacks'] if a.strip()]) + \
+                   len([h for h in match_state['blue']['history'] if "即時攻擊" in h.get("prefix", "")])
+        
+        rdl = len(match_state['red']['defense'].strip())
+        bdl = len(match_state['blue']['defense'].strip())
+
+        # 判定函數
+        if rs != bs:
+            winner = "🔴 紅隊" if rs > bs else "🔵 藍隊"
+            # 這裡將兩個部分合併為一個字串
+            return f"{winner} 勝利！\n總分較高 (紅：{rs} vs 藍：{bs})"
             
-        ral = sum(len(a.strip()) for a in match_state['red']['r1_attacks'])
-        bal = sum(len(a.strip()) for a in match_state['blue']['r1_attacks'])
-        if ral < bal: return f"🎉 🔴 恭喜【紅隊】獲勝！\n\n【平手判定】紅隊攻擊總字數較少 ({ral} < {bal})"
-        if bal < ral: return f"🎉 🔵 恭喜【藍隊】獲勝！\n\n【平手判定】藍隊攻擊總字數較少 ({bal} < {ral})"
+        if red_atk != blue_atk:
+            winner = "🔴 紅隊" if red_atk < blue_atk else "🔵 藍隊"
+            return f"{winner} 勝利！\n同分比序1：攻擊總次數較少 (紅：{red_atk} vs 藍：{blue_atk})"
             
-        return "🤝 奇蹟般的完全平手！"
+        if rdl != bdl:
+            winner = "🔴 紅隊" if rdl < bdl else "🔵 藍隊"
+            return f"{winner} 勝利！\n同分比序2：防禦字數較少 (紅：{rdl} vs 藍：{bdl})"
+
+        return "🤝 完全平手！\n判定原因：雙方各項數據完全相同"
 
 # ==========================================
 # 📡 WebSocket 連線管理器 (廣播中心)
@@ -231,67 +248,90 @@ manager = ConnectionManager()
 def clean_text(text): 
     return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
 
-def run_inference(sys_prompt, usr_prompt):
+def run_inference(sys_msg: str, user_msg: str, model_name: str) -> str:
     try:
-        res = client.chat.completions.create(
-            model=TARGET_MODEL, 
-            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": usr_prompt}],
-            temperature=0, max_tokens=150
+        response = client.chat.completions.create(
+            model=model_name, # 🌟 這裡改成變數
+            messages=[
+                {"role": "system", "content": sys_msg},
+                {"role": "user", "content": user_msg}
+            ],
+            temperature=0.1 # 建議調低，讓防禦比較有效
         )
-        return res.choices[0].message.content.strip()
-    except Exception as e: 
-        return f"[API 錯誤]: {str(e)}"
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"[API_ERROR] {str(e)}" # 🌟 加上特殊前綴方便辨識錯誤
 
 # 非同步的第一輪交錯開獎
 async def evaluate_round_1():
-    with state_lock:
-        if match_state["eval_running"]: return
-        match_state["eval_running"] = True
+    # 🌟 讀取關主的最新設定 (模型、進階計分)
+    is_adv_score = match_state.get("adv_score", False)
+    current_model = match_state.get("current_model", "qwen/qwen-2.5-7b-instruct")
     
-    log_event("⏳ 鎖定！正在進行第一輪即時交錯開獎...")
-    await manager.broadcast_state()
-
-    try:
-        for i in range(10):
-            for team in ["red", "blue"]:
-                opp = "blue" if team == "red" else "red"
-                with state_lock:
-                    base_msg = match_state["base_system_msg"]
-                    opp_def = match_state[opp]['defense']
-                    atk = match_state[team]["r1_attacks"][i]
-                
-                if not atk.strip(): continue
-                
-                opp_sys = f"{base_msg}\n[DEFENSE_PROMPT]: {opp_def}"
-                
-                # 讓 AI 推理在背景執行緒跑，不卡住 WebSocket 廣播
-                out = await asyncio.to_thread(run_inference, opp_sys, atk)
-                
-                with state_lock:
-                    kws = match_state["keywords"]
-                    hits = [k for k in kws if clean_text(k) in clean_text(out)]
-                    pts = len(hits)
-                    match_state[team]["score"] += pts
-                    
-                    # 紀錄戰報 (前端負責將這些資料渲染成漂亮的氣泡框)
-                    ts = time.strftime('%H:%M:%S')
-                    log_obj = {
-                        "timestamp": ts, "prefix": f"題 #{i+1}", "success": pts > 0,
-                        "points": pts, "hits": hits, "llm_output": out
-                    }
-                    match_state[team]["history"].insert(0, log_obj)
-                    
-                if pts > 0: log_event(f"💥 {'紅隊' if team=='red' else '藍隊'} 第 {i+1} 題破防！(+{pts}分)")
-                
-                # 每算完一題就廣播一次，製造即時開獎的刺激感
-                await manager.broadcast_state()
-                await asyncio.sleep(0.5) 
-                
-        with state_lock: log_event("✅ 第一輪批次結算完成！")
-        await manager.broadcast_state()
+    for team in ["red", "blue"]:
+        opp = "blue" if team == "red" else "red"
+        sys_msg = f"{match_state['base_system_msg']}\n[DEFENSE_PROMPT]: {match_state[opp]['defense']}"
         
-    finally:
-        with state_lock: match_state["eval_running"] = False
+        for idx, atk_text in enumerate(match_state[team]["r1_attacks"]):
+            if not atk_text.strip():
+                continue
+                
+            # 呼叫 LLM 進行測試
+            out = await asyncio.to_thread(run_inference, sys_msg, atk_text, current_model)
+            
+            is_error = False
+            if out.startswith("[API_ERROR]"):
+                out = f"❌ [伺服器異常] {out}"
+                is_error = True
+                
+            with state_lock:
+                pts = 0
+                hits = []
+                if not is_error:
+                    cleaned_out = clean_text(out)
+                    for k in match_state["keywords"]:
+                        cleaned_k = clean_text(k)
+                        if cleaned_k in cleaned_out:
+                            hits.append(k)
+                            # 🎯 進階計分
+                            if is_adv_score and cleaned_out == cleaned_k:
+                                pts += 2
+                            else:
+                                pts += 1
+                                
+                match_state[team]["score"] += pts
+                ts = time.strftime('%H:%M:%S')
+                
+                # 🌟 修正重點：把 Attack Prompt 存進 history 裡！
+                log_obj = {
+                    "timestamp": ts,
+                    "prefix": f"第一輪題 #{idx+1}", # 明確標示是第一輪
+                    "success": pts > 0,
+                    "points": pts,
+                    "hits": hits,
+                    "attack_prompt": atk_text, 
+                    "llm_output": out
+                }
+                match_state[team]["history"].insert(0, log_obj)
+                
+                # 🌟 讓大螢幕也播報第一輪的戰況
+                team_name = "紅隊" if team == "red" else "藍隊"
+                short_attack = atk_text[:15] + "..." if len(atk_text) > 15 else atk_text
+                if is_error:
+                    status = "⚠️ 系統/API 異常"
+                elif pts >= 2:
+                    status = f"🎯 R1 完美爆擊 (+{pts})"
+                elif pts > 0:
+                    status = f"🎯 R1 破防成功 (+{pts})"
+                else:
+                    status = "🛡️ R1 遭到防禦"
+                log_event(f"[{team_name}] {status} | 攻擊: {short_attack}")
+
+    with state_lock:
+        match_state["phase"] = "WAIT_R2"
+        log_event("📢 第一輪盲打結算完畢，雙方請準備進入第二輪熱戰！")
+    
+    await manager.broadcast_state()
 
 # 背景計時精靈
 async def timer_daemon():
@@ -316,6 +356,19 @@ async def timer_daemon():
             await manager.broadcast_state()
 
 # ==========================================
+# 🔌 一鍵下載完整戰報 API (請加在 websocket 路由的上方或下方)
+# ==========================================
+from fastapi.responses import JSONResponse
+
+@app.get(f"{BASE_PATH}/api/download_log")
+def download_log():
+    # 下載時會將當下的 match_state 包裝成 JSON 檔案回傳
+    return JSONResponse(
+        content=match_state, 
+        headers={"Content-Disposition": 'attachment; filename="prompt_battle_record.json"'}
+    )
+
+# ==========================================
 # 🔌 WebSocket 路由 (接收前端操作)
 # ==========================================
 @app.websocket(f"{BASE_PATH}/ws")
@@ -338,11 +391,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                 elif action == "update_defense" and phase == "R2_RUNNING":
                     # 第二輪熱更新防禦
-                    match_state[data["team"]]["defense"] = data["text"]
-                    log_event(f"🛡️ {'紅隊' if data['team']=='red' else '藍隊'} 更新了防禦護欄！")
+                    team = data["team"]
+                    text = data["text"]
+                    match_state[team]["defense"] = text
+                    
+                    # 🌟 新增：記錄防禦演進史 (保存每次修改的版本與時間)
+                    if "defense_history" not in match_state[team]:
+                        match_state[team]["defense_history"] = []
+                    match_state[team]["defense_history"].append({
+                        "timestamp": time.strftime('%H:%M:%S'),
+                        "defense": text
+                    })
+                    
+                    log_event(f"🛡️ {'紅隊' if team=='red' else '藍隊'} 更新了防禦護欄！")
                     
                 elif action == "launch_attack" and phase == "R2_RUNNING":
-                    # 第二輪單發即時攻擊
                     team, atk_text = data["team"], data["text"]
                     curr = time.time()
                     if curr - match_state[team]["last_attack_time"] >= 15 and atk_text.strip():
@@ -351,26 +414,92 @@ async def websocket_endpoint(websocket: WebSocket):
                         opp = "blue" if team == "red" else "red"
                         opp_sys = f"{match_state['base_system_msg']}\n[DEFENSE_PROMPT]: {match_state[opp]['defense']}"
                         
-                        # 啟動背景任務算分數，避免卡住其他 WebSocket 廣播
-                        async def process_r2_attack(t, sys_p, usr_p):
-                            out = await asyncio.to_thread(run_inference, sys_p, usr_p)
+                        # 🌟 讀取當前設定
+                        is_anti_spam = match_state.get("anti_spam", False)
+                        is_adv_score = match_state.get("adv_score", False)
+                        current_model = match_state.get("current_model", "qwen/qwen-2.5-7b-instruct")
+                        
+                        async def process_r2_attack(t, sys_p, usr_p, model):
                             with state_lock:
-                                hits = [k for k in match_state["keywords"] if clean_text(k) in clean_text(out)]
-                                pts = len(hits)
+                                # 🛡️ 防洗版檢查
+                                is_error = False
+                                if is_anti_spam:
+                                    past_attacks = [log.get("attack_prompt", "") for log in match_state[t]["history"]]
+                                    if usr_p in past_attacks:
+                                        out = "⚠️ [系統判定] 攻擊無效：防洗版機制已開啟，請勿發送完全相同的指令！"
+                                        is_error = True
+
+                            # 呼叫 LLM
+                            if not is_error:
+                                out = await asyncio.to_thread(run_inference, sys_p, usr_p, model)
+                                # 🚨 API 故障判定 (抓取我們剛剛設定的 [API_ERROR] 前綴)
+                                if out.startswith("[API_ERROR]"):
+                                    out = f"❌ [伺服器異常] 無法連接模型，請稍後再試。詳細: {out}"
+                                    is_error = True
+
+                            with state_lock:
+                                pts = 0
+                                hits = []
+                                # 只有非異常狀態才計分 (正常的 Request Denied 會走這裡，但因為沒有關鍵字所以得0分)
+                                if not is_error:
+                                    cleaned_out = clean_text(out)
+                                    for k in match_state["keywords"]:
+                                        cleaned_k = clean_text(k)
+                                        if cleaned_k in cleaned_out:
+                                            hits.append(k)
+                                            # 🎯 精準爆擊判定
+                                            if is_adv_score and cleaned_out == cleaned_k:
+                                                pts += 2
+                                            else:
+                                                pts += 1
+                                                
                                 match_state[t]["score"] += pts
                                 ts = time.strftime('%H:%M:%S')
-                                log_obj = {"timestamp": ts, "prefix": "即時攻擊", "success": pts > 0, "points": pts, "hits": hits, "llm_output": out}
+                                
+                                log_obj = {
+                                    "timestamp": ts, 
+                                    "prefix": "即時攻擊", 
+                                    "success": pts > 0, 
+                                    "points": pts, 
+                                    "hits": hits, 
+                                    "attack_prompt": usr_p,
+                                    "llm_output": out
+                                }
                                 match_state[t]["history"].insert(0, log_obj)
-                                if pts > 0: log_event(f"🔥 {'紅隊' if t=='red' else '藍隊'} 即時突破！逼出：{', '.join(hits)}")
+                                
+                                # 廣播紀錄處理
+                                team_name = "紅隊" if t == "red" else "藍隊"
+                                short_attack = usr_p[:20] + "..." if len(usr_p) > 20 else usr_p
+                                short_output = out[:20] + "..." if len(out) > 20 else out
+                                
+                                if is_error:
+                                    status = "⚠️ 系統/API 異常"
+                                else:
+                                    if pts >= 2:
+                                        status = f"🎯 完美爆擊 (+{pts})"
+                                    elif pts > 0:
+                                        status = f"🎯 破防成功 (+{pts})"
+                                    else:
+                                        status = "🛡️ 防禦擋下"
+                                        
+                                log_event(f"[{team_name}] {status} | 攻擊: {short_attack} ➔ 輸出: {short_output}")
+                                
                             await manager.broadcast_state()
                             
-                        asyncio.create_task(process_r2_attack(team, opp_sys, atk_text))
+                        # 把參數傳進背景任務
+                        asyncio.create_task(process_r2_attack(team, opp_sys, atk_text, current_model))
 
                 # --- 關主操作 ---
                 elif action == "admin_set_phase":
                     new_phase = data["phase"]
                     match_state["phase"] = new_phase
-                    mins = data.get("mins", 0)
+                    
+                    # 🌟 加上浮點數與整數的轉換，防止前端傳字串過來導致伺服器崩潰
+                    try:
+                        mins = float(data.get("mins", 0))
+                    except ValueError:
+                        mins = 0
+                        
                     if mins > 0:
                         match_state["timer_end"] = time.time() + (mins * 60)
                         match_state["timer_running"] = True
@@ -381,9 +510,36 @@ async def websocket_endpoint(websocket: WebSocket):
                         asyncio.create_task(evaluate_round_1())
 
                 elif action == "admin_settings":
-                    match_state["base_system_msg"] = data["base_system_msg"]
-                    match_state["keywords"] = [k.strip() for k in data["keywords"].split(",") if k.strip()]
-                    log_event("⚙️ 關主已更新基礎指令與關鍵字。")
+                    changes = []
+                    
+                    # 1. 檢查基礎指令是否有變動
+                    if match_state.get("base_system_msg") != data.get("base_system_msg"):
+                        changes.append("基礎指令")
+                        match_state["base_system_msg"] = data["base_system_msg"]
+                        
+                    # 2. 檢查關鍵字是否有變動 (使用 set 忽略順序差異)
+                    new_kws = [k.strip() for k in data["keywords"].split(",") if k.strip()]
+                    if set(match_state.get("keywords", [])) != set(new_kws):
+                        changes.append("任務關鍵字")
+                        match_state["keywords"] = new_kws
+                        
+                    # 3. 檢查特殊規則是否有變動
+                    new_anti_spam = data.get("anti_spam", False)
+                    new_adv_score = data.get("adv_score", False)
+                    if match_state.get("anti_spam") != new_anti_spam or match_state.get("adv_score") != new_adv_score:
+                        changes.append("特殊規則")
+                        match_state["anti_spam"] = new_anti_spam
+                        match_state["adv_score"] = new_adv_score
+                        
+                    # 4. 檢查模型是否有變動
+                    new_model = data.get("current_model", "qwen/qwen-2.5-7b-instruct")
+                    if match_state.get("current_model") != new_model:
+                        changes.append("語言模型")
+                        match_state["current_model"] = new_model
+                        
+                    # 只有在真的有變動時才發送廣播
+                    if changes:
+                        log_event(f"⚙️ 關主已更新設定：【{', '.join(changes)}】發生變動。")
 
                 elif action == "admin_reset":
                     kws, sys_msg = match_state["keywords"], match_state["base_system_msg"]

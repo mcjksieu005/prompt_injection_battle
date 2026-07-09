@@ -139,6 +139,9 @@
             ws.onmessage = (event) => updateBoard(JSON.parse(event.data));
         }
 
+        // 🌟 在函數外部宣告一個變數，用來記憶上一次的日誌內容
+        let lastLogsHtml = "";
+
         function updateBoard(state) {
             // 處理標題與時間
             const phaseMap = {
@@ -165,10 +168,16 @@
             }
 
             // 廣播日誌 (只顯示最新的 5 筆，避免塞滿螢幕)
-            const logsContainer = document.getElementById('broadcast-logs');
-            logsContainer.innerHTML = state.event_logs.slice(0, 5).map(log => 
+            // 🌟 1. 先把新的 HTML 組合起來，存成字串，不要直接塞進網頁
+            const newLogsHtml = state.event_logs.slice(0, 5).map(log => 
                 `<div class="log-entry">${log}</div>`
             ).join('');
+
+            // 🌟 2. 治本防閃機制：拿新的字串跟記憶中的字串比對，不一樣才更新
+            if (newLogsHtml !== lastLogsHtml) {
+                document.getElementById('broadcast-logs').innerHTML = newLogsHtml;
+                lastLogsHtml = newLogsHtml; // 更新記憶
+            }
         }
 
         connect();
