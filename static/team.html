@@ -16,6 +16,13 @@
             --success-color: #10b981;   
             --danger-color: #ef4444;
             --radius: 12px;
+            --bubble-bg-red: #fef2f2;
+            --bubble-border-red: #fecaca;
+            --bubble-bg-blue: #eff6ff;
+            --bubble-border-blue: #bfdbfe;
+            --prompt-bg: rgba(255, 255, 255, 0.6);
+            --output-bg: rgba(0, 0, 0, 0.05);
+            --muted-text: #374151;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -25,6 +32,13 @@
                 --text-main: #f8fafc;
                 --border-color: #334155;
                 --overlay-bg: rgba(15, 23, 42, 0.8);
+                --bubble-bg-red: rgba(239, 68, 68, 0.15);
+                --bubble-border-red: rgba(239, 68, 68, 0.4);
+                --bubble-bg-blue: rgba(59, 130, 246, 0.15);
+                --bubble-border-blue: rgba(59, 130, 246, 0.4);
+                --prompt-bg: rgba(0, 0, 0, 0.3);
+                --output-bg: rgba(0, 0, 0, 0.5);
+                --muted-text: #cbd5e1;
             }
         }
 
@@ -132,6 +146,28 @@
         #result-card:has(div) {
             pointer-events: auto;
         }
+
+        /* 📱 手機版排版修正 */
+        @media (max-width: 768px) {
+            .main-container { flex-direction: column; }
+            .panel { height: 50vh; flex: none; } /* 讓上下兩塊各佔一半螢幕 */
+            .left-panel { border-right: none; border-bottom: 2px solid var(--border-color); }
+            .right-panel { border-left: none; }
+            .status-info { flex-wrap: wrap; justify-content: flex-end; }
+        }
+
+        /* 🔍 戰報文字折疊效果 */
+        .text-clamp {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3; /* 預設只顯示 3 行 */
+            overflow: hidden;
+        }
+        .toggle-btn {
+            cursor: pointer; font-size: 0.85rem; color: var(--theme-color);
+            font-weight: bold; display: inline-block; margin-top: 5px;
+        }
+        .toggle-btn:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -348,29 +384,35 @@
             // 安全過濾函數
             const escapeHTML = (str) => (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-            // 🌟 4. 渲染合併後的戰報 (加入第一輪/第二輪前綴判斷)
-            const histHtml = combinedHistory.map(log => {
+            // 🌟 4. 渲染合併後的戰報 (加入第一輪/第二輪前綴判斷) (加入展開功能與深色模式變數)
+            const histHtml = combinedHistory.map((log, index) => { // 加上 index 用來做獨立的 ID
                 const isSuccess = log.success;
                 const hitList = log.hits && log.hits.length > 0 ? log.hits.join(', ') : '無';
-                
-                // 標示是第幾題 (R1) 還是即時攻擊 (R2)
                 const roundPrefix = log.prefix || "攻擊";
                 
-                // 即使 R1 沒有記錄到 prompt，也會顯示「未記錄」而不會崩潰
-                const promptHtml = `<div style="margin-bottom: 8px; font-family: monospace; white-space: pre-wrap; word-break: break-all; background: rgba(255,255,255,0.6); padding: 5px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.05);">${escapeHTML(log.attack_prompt || "未記錄 (舊版第一輪盲打)")}</div>`;
-                const outputHtml = `<div style="font-family: monospace; white-space: pre-wrap; word-break: break-all; background: rgba(0,0,0,0.05); padding: 5px; border-radius: 4px; color: #374151;">${escapeHTML(log.llm_output || "無回應")}</div>`;
+                // 動態產生唯一的 ID 給展開按鈕用
+                const promptId = `prompt-${index}`;
+                const outputId = `output-${index}`;
+                
+                // 改用 text-clamp 類別與 CSS 變數
+                const promptHtml = `
+                    <div id="${promptId}" class="text-clamp" style="margin-bottom: 4px; font-family: monospace; white-space: pre-wrap; word-break: break-all; background: var(--prompt-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); color: var(--text-main);">${escapeHTML(log.attack_prompt || "未記錄")}</div>
+                    <div class="toggle-btn" onclick="document.getElementById('${promptId}').classList.toggle('text-clamp')">🔍 展開/收合 Prompt</div>
+                `;
+                const outputHtml = `
+                    <div id="${outputId}" class="text-clamp" style="font-family: monospace; white-space: pre-wrap; word-break: break-all; background: var(--output-bg); padding: 8px; border-radius: 4px; color: var(--muted-text);">${escapeHTML(log.llm_output || "無回應")}</div>
+                    <div class="toggle-btn" onclick="document.getElementById('${outputId}').classList.toggle('text-clamp')">🔍 展開/收合 回應</div>
+                `;
 
                 const attackerTeam = log.isMine ? myTeam : oppTeam;
-                const theme = attackerTeam === "red" ? {
-                    borderLeft: "#ef4444", bg: "#fef2f2", boxBorder: "#fecaca" 
-                } : {
-                    borderLeft: "#3b82f6", bg: "#eff6ff", boxBorder: "#bfdbfe" 
-                };
+                // 改用 CSS 變數，深色模式就會自動切換顏色
+                const theme = attackerTeam === "red" 
+                    ? { borderLeft: "#ef4444", bg: "var(--bubble-bg-red)", boxBorder: "var(--bubble-border-red)" } 
+                    : { borderLeft: "#3b82f6", bg: "var(--bubble-bg-blue)", boxBorder: "var(--bubble-border-blue)" };
 
                 if (log.isMine) {
-                    // ⚔️ 【我方發起的攻擊】
                     const titleHtml = isSuccess 
-                        ? `<span style="color: #059669; font-weight: bold;">🎯 破防成功 (逼出關鍵字: ${hitList})</span>` 
+                        ? `<span style="color: var(--success-color, #10b981); font-weight: bold;">🎯 破防成功 (逼出關鍵字: ${hitList})</span>` 
                         : `<span style="color: #64748b; font-weight: bold;">🛡️ 遭到防禦 (無關鍵字)</span>`;
                     
                     return `
@@ -382,15 +424,14 @@
                             <div style="margin-bottom: 8px;">${titleHtml}</div>
                             <strong>我方的 Prompt:</strong>
                             ${promptHtml}
-                            <strong>敵方 AI 的回應:</strong>
+                            <div style="margin-top: 8px;"><strong>敵方 AI 的回應:</strong></div>
                             ${outputHtml}
                         </div>
                     `;
                 } else {
-                    // 🚨 【敵方打過來的攻擊】
                     const titleHtml = isSuccess 
-                        ? `<span style="color: #dc2626; font-weight: bold;">⚠️ 防線遭破 (洩漏關鍵字: ${hitList})</span>` 
-                        : `<span style="color: #059669; font-weight: bold;">🛡️ 成功擋下 (無關鍵字)</span>`;
+                        ? `<span style="color: var(--danger-color, #ef4444); font-weight: bold;">⚠️ 防線遭破 (洩漏關鍵字: ${hitList})</span>` 
+                        : `<span style="color: var(--success-color, #10b981); font-weight: bold;">🛡️ 成功擋下 (無關鍵字)</span>`;
                     
                     return `
                         <div class="log-bubble" style="border-left: 5px solid ${theme.borderLeft}; background: ${theme.bg}; padding: 12px; margin-bottom: 12px; border-radius: 6px; border: 1px solid ${theme.boxBorder};">
@@ -401,7 +442,7 @@
                             <div style="margin-bottom: 8px;">${titleHtml}</div>
                             <strong>敵方的 Prompt:</strong>
                             ${promptHtml}
-                            <strong>我方 AI 的回應:</strong>
+                            <div style="margin-top: 8px;"><strong>我方 AI 的回應:</strong></div>
                             ${outputHtml}
                         </div>
                     `;

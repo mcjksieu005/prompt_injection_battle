@@ -227,14 +227,14 @@ class ConnectionManager:
                         "defense": match_state["red"]["defense"],
                         "r1_attacks": match_state["red"]["r1_attacks"],
                         "history": match_state["red"]["history"],
-                        "cd_remaining": max(0, int(15 - (time.time() - match_state["red"]["last_attack_time"])))
+                        "cd_remaining": max(0, int(7 - (time.time() - match_state["red"]["last_attack_time"])))
                     },
                     "blue": {
                         "score": match_state["blue"]["score"],
                         "defense": match_state["blue"]["defense"],
                         "r1_attacks": match_state["blue"]["r1_attacks"],
                         "history": match_state["blue"]["history"],
-                        "cd_remaining": max(0, int(15 - (time.time() - match_state["blue"]["last_attack_time"])))
+                        "cd_remaining": max(0, int(7 - (time.time() - match_state["blue"]["last_attack_time"])))
                     }
                 }
             }
@@ -246,7 +246,7 @@ manager = ConnectionManager()
 # ⚔️ 遊戲核心邏輯與 AI 推理
 # ==========================================
 def clean_text(text): 
-    return re.sub(r'[^a-zA-Z0-9]', '', text).lower()
+    return re.sub(r'[^a-zA-Z0-9]', '', text)
 
 def run_inference(sys_msg: str, user_msg: str, model_name: str) -> str:
     try:
@@ -547,6 +547,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     match_state["keywords"] = kws
                     match_state["base_system_msg"] = sys_msg
                     log_event("⚠️ 遊戲已由管理員重置。")
+
+                # --- 新增：動態加減時間 ---
+                elif action == "admin_adjust_time":
+                    delta_mins = data.get("delta", 0)
+                    if match_state.get("timer_running", False):
+                        match_state["timer_end"] += (delta_mins * 60)
+                        sign = "+" if delta_mins > 0 else ""
+                        log_event(f"📢 關主動態調整時間：{sign}{delta_mins} 分鐘")
+                        # 備註：如果扣到時間小於現在時間，你原本背景監控時間的 loop 
+                        # 就會自動觸發時間到的邏輯 (例如自動結算)，所以這裡不用多寫判斷！
 
             # 任何操作完成後，廣播最新狀態給全體
             await manager.broadcast_state()

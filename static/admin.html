@@ -61,6 +61,10 @@
     <div class="status-bar">
         <div id="phase-display">階段：載入中...</div>
         <div id="timer-display">⏱️ 00:00</div>
+        <div style="margin-top: 10px;">
+            <button onclick="adjustTime(1)" style="background: #10b981; padding: 5px 10px; font-size: 0.9rem;">⏳ +1 分鐘</button>
+            <button onclick="adjustTime(-1)" style="background: #ef4444; padding: 5px 10px; font-size: 0.9rem;">⏳ -1 分鐘</button>
+        </div>
         <div class="scores">
             <span class="red-score">🔴 <span id="score-red">0</span></span>
             <span class="blue-score">🔵 <span id="score-blue">0</span></span>
@@ -75,7 +79,7 @@
             <div style="display: flex; flex-direction: column; gap: 8px; background: var(--bg-color); padding: 10px; border-radius: var(--radius); border: 1px solid var(--border); box-sizing: border-box; justify-content: center;">
                 <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
                     <span style="font-size: 0.9rem; font-weight: bold; white-space: nowrap;">⏳ 回合時間:</span>
-                    <input type="number" id="time-r1" value="10" min="1" max="60" style="width: 55px; margin-bottom: 0; padding: 5px; text-align: center;">
+                    <input type="number" id="time-r1" value="7" min="1" max="60" style="width: 55px; margin-bottom: 0; padding: 5px; text-align: center;">
                     <span style="font-size: 0.9rem; font-weight: bold; white-space: nowrap;">分鐘</span>
                 </div>
                 <button class="btn-success" style="margin: 0; width: 100%; padding: 8px 0;" onclick="setPhase('R1_RUNNING', document.getElementById('time-r1').value)">2️⃣ 開始第一輪</button>
@@ -251,6 +255,11 @@
             if(confirm("確定要重置整個遊戲嗎？分數與紀錄將被清空！")) {
                 ws.send(JSON.stringify({ action: "admin_reset" }));
             }
+        }
+
+        function adjustTime(delta) {
+            if(!confirm(`確定要 ${delta > 0 ? '增加' : '減少'} 1 分鐘嗎？`)) return;
+            ws.send(JSON.stringify({ action: "admin_adjust_time", delta: delta }));
         }
 
         // 啟動連線
