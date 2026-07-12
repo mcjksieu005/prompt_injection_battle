@@ -192,6 +192,7 @@
         const pathname = window.location.pathname;
         const basePath = pathname.substring(0, pathname.lastIndexOf('/'));
         const wsUrl = `${wsProtocol}//${window.location.host}${basePath}/ws`;
+        let globalMatchState = null;
         let ws;
 
         function connect() {
@@ -213,8 +214,8 @@
             };
 
             ws.onmessage = (event) => {
-                const state = JSON.parse(event.data);
-                updateDashboard(state);
+                globalMatchState = JSON.parse(event.data); // 存下最新的戰報
+                updateUI(globalMatchState);                // 更新畫面
             };
         }
 
@@ -282,6 +283,36 @@
             const cdValue = parseInt(document.getElementById('admin-cd-time').value) || 7;
             ws.send(JSON.stringify({ action: "admin_set_cd", cd: cdValue }));
             alert(`✅ 已將攻擊冷卻時間更新為 ${cdValue} 秒！`);
+        }
+
+        function downloadJSON() {
+            if (!globalMatchState) {
+                return alert("⚠️ 目前尚未收到伺服器的戰況資料，請稍後再試！");
+            }
+            
+            // 1. 將戰報 JSON 物件轉換成排版整齊的字串 (null, 2 代表縮排 2 空格)
+            const jsonString = JSON.stringify(globalMatchState, null, 2);
+            
+            // 2. 建立 Blob (二進位大型物件) 來產生真實的檔案
+            const blob = new Blob([jsonString], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            // 3. 取得現在的時間，用來當作檔案名稱
+            const now = new Date();
+            // 格式化時間 (例如 2026-07-13_14-30-00)
+            const timeString = now.toISOString().replace(/T/, '_').replace(/:/g, '-').slice(0, 19);
+            const fileName = `Prompt_Battle_戰報_${timeString}.json`;
+            
+            // 4. 動態產生一個 <a> 標籤，模擬點擊下載，然後馬上把它刪掉
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            
+            // 5. 檔案下載後，釋放瀏覽器記憶體
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         // 啟動連線
