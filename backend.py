@@ -400,13 +400,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 phase = match_state["phase"]
                 
                 # --- 小隊操作 ---
-                if action == "sync_draft" and phase in ["WAIT_R1", "R1_RUNNING"]:
-                    # 第一輪即時同步草稿
-                    team, t_type, idx, text = data["team"], data["type"], data["index"], data["text"]
-                    if t_type == "def": match_state[team]["defense"] = text
-                    elif t_type == "atk": match_state[team]["r1_attacks"][idx] = text
-                    
-                elif action == "update_defense" and phase == "R2_RUNNING":
+                if action == "update_defense" and phase == "R2_RUNNING":
                     # 第二輪熱更新防禦
                     team = data["team"]
                     text = data["text"]
@@ -458,6 +452,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                     is_error = True
 
                             with state_lock:
+                                # 🌟 核心修正：如果打完 API 回來，發現第二輪已經結束了，立刻攔截拋棄，不計分、不寫入歷史
+                                if match_state["phase"] != "R2_RUNNING":
+                                    return
+                                
                                 pts = 0
                                 hits = []
                                 # 只有非異常狀態才計分 (正常的 Request Denied 會走這裡，但因為沒有關鍵字所以得0分)

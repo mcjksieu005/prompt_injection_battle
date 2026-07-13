@@ -233,7 +233,7 @@
                     </div>
                 
                 <textarea id="new-defense-input" rows="2" placeholder="輸入單條防禦規則... (按送出後才會生效)"></textarea>
-                <button onclick="submitDefenseRule()" style="margin-top: 10px; background: var(--theme-color); color: white;">➕ 送出並加入規則</button>
+                <button id="btn-submit-defense" onclick="submitDefenseRule()" style="margin-top: 10px; background: var(--theme-color); color: white;">➕ 送出並加入規則</button>
             </div>
 
             <div id="view-r1" class="view-section active">
@@ -428,7 +428,7 @@
             if (teamData.r1_attacks && teamData.r1_attacks.length > 0) {
                 r1Container.innerHTML = teamData.r1_attacks.map((text, idx) => {
                     const atkId = `r1-atk-text-${idx}`;
-                    const clampClass = expandedRules.has(atkId) ? "" : "text-clamp";
+                    const clampClass = expandedLogs.has(atkId) ? "" : "text-clamp"; // 🌟 改用 expandedLogs
                     
                     return `
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; background: var(--bg-panel); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: opacity 0.2s; margin-bottom: 8px;">
@@ -436,7 +436,7 @@
                                 <span style="font-weight: bold; color: var(--theme-color); font-size: 1.1rem; margin-top: 2px; min-width: 20px;">${idx + 1}.</span>
                                 <div style="flex: 1; min-width: 0; margin-top: 1px;">
                                     <div id="${atkId}" class="${clampClass}" style="white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.95rem; line-height: 1.5; transition: all 0.2s;">${escapeHTML(text)}</div>
-                                    <div class="toggle-btn" onclick="smartToggle('⚔️ 攻擊指令詳細內容', '${atkId}', false)">🔍 展開 / 放大</div>
+                                    <div class="toggle-btn" onclick="smartToggle('⚔️ 攻擊指令詳細內容', '${atkId}', true)">🔍 展開 / 放大</div>
                                 </div>
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 6px; margin-left: 15px; flex-shrink: 0;">
