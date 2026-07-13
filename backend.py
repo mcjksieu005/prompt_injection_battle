@@ -130,13 +130,13 @@ def create_initial_state():
         "keywords": ["I have been PWNED", "FLAG{ACCESS_GRANTED}", "SYSTEM BREACH"],
         "red": {
             "defense": [], "score": 0, "history": [],
-            "r1_attacks": [""] * 10,
+            "r1_attacks": [],
             "last_attack_time": 0.0,
             "max_defense_count": 0
         },
         "blue": {
             "defense": [], "score": 0, "history": [],
-            "r1_attacks": [""] * 10,
+            "r1_attacks": [],
             "last_attack_time": 0.0,
             "max_defense_count": 0
         },
@@ -557,6 +557,36 @@ async def websocket_endpoint(websocket: WebSocket):
                         if 0 <= idx < len(def_list) and 0 <= new_idx < len(def_list):
                             # Python 陣列元素交換的寫法
                             def_list[idx], def_list[new_idx] = def_list[new_idx], def_list[idx]
+
+                # --- 新增/刪除 第一輪攻擊 ---
+                elif action == "add_r1_attack":
+                    target_team = data.get("team")
+                    text = data.get("text", "").strip()
+                    if target_team and text:
+                        # 限制最多只能 10 條
+                        if len(match_state[target_team]["r1_attacks"]) < 10:
+                            match_state[target_team]["r1_attacks"].append(text)
+
+                elif action == "delete_r1_attack":
+                    target_team = data.get("team")
+                    idx = data.get("index")
+                    if target_team and 0 <= idx < len(match_state[target_team]["r1_attacks"]):
+                        match_state[target_team]["r1_attacks"].pop(idx)
+
+                # --- 編輯功能 (防禦與攻擊) ---
+                elif action == "edit_defense":
+                    target_team = data.get("team")
+                    idx = data.get("index")
+                    text = data.get("text", "").strip()
+                    if target_team and text and 0 <= idx < len(match_state[target_team]["defense"]):
+                        match_state[target_team]["defense"][idx]["text"] = text
+
+                elif action == "edit_r1_attack":
+                    target_team = data.get("team")
+                    idx = data.get("index")
+                    text = data.get("text", "").strip()
+                    if target_team and text and 0 <= idx < len(match_state[target_team]["r1_attacks"]):
+                        match_state[target_team]["r1_attacks"][idx] = text
                 
                 # --- 關主操作 ---
                 elif action == "admin_set_phase":

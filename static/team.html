@@ -204,9 +204,16 @@
             </div>
 
             <div id="view-r1" class="view-section active">
-                <p>📝 <strong>盲打佈局</strong>：輸入即時同步至伺服器。</p>
-                <div id="r1-attacks-container">
-                    </div>
+                <p>📝 <strong>盲打佈局</strong>：輸入單條攻擊，送出後加入清單。</p>
+                <div class="input-group" style="background: var(--bg-page); padding: 15px; border-radius: 8px; border: 2px dashed var(--border-color); margin-bottom: 20px;">
+                    <label style="font-size: 1.1rem; color: var(--theme-color);">⚔️ 第一輪攻擊指令 (上限 10 條)</label>
+                    
+                    <div id="r1-attacks-container" style="margin-top: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                        </div>
+                    
+                    <textarea id="new-r1-input" rows="2" placeholder="輸入單次攻擊指令... (按送出後才會生效)"></textarea>
+                    <button id="btn-submit-r1" onclick="submitR1Attack()" style="margin-top: 10px; background: var(--theme-color); color: white;">🚀 送出並加入攻擊</button>
+                </div>
             </div>
 
             <div id="view-r2" class="view-section">
@@ -245,16 +252,10 @@
         document.documentElement.style.setProperty('--theme-color', themeColor);
         document.getElementById('team-title').innerText = TEAM === 'red' ? '🔴 終端機 (紅隊)' : '🔵 終端機 (藍隊)';
 
-        // 🌟 3. 初始化 R1 的 10 個攻擊輸入框
-        const r1Container = document.getElementById('r1-attacks-container');
-        for(let i=0; i<10; i++) {
-            r1Container.innerHTML += `
-                <div class="input-group">
-                    <label>攻擊 #${i+1}</label>
-                    <input type="text" id="r1-atk-${i}" data-index="${i}">
-                </div>
-            `;
-        }
+        // 🌟 3. 初始化 R1 的擊輸入框
+        let editingDefenseIndex = -1;
+        let editingR1Index = -1;
+        let windowLastState = null; // 用來暫存最新的 state 方便編輯時抓取文字
 
         // 🌟 4. 建立 WebSocket 連線
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -274,6 +275,7 @@
 
         // 🌟 5. 畫面渲染與狀態更新邏輯
         function updateUI(state) {
+            windowLastState = state;
             // 🌟 修正：把過濾函數移到最上面，確保後面的程式碼都能用到它！
             const escapeHTML = (str) => (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -370,6 +372,7 @@
                                     <button onclick="moveDefenseRule(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} style="background: #f1f5f9; color: #475569; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; width: 100%; font-size: 0.8rem;">⬆️</button>
                                     <button onclick="moveDefenseRule(${idx}, 1)" ${idx === teamData.defense.length - 1 ? 'disabled' : ''} style="background: #f1f5f9; color: #475569; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; width: 100%; font-size: 0.8rem;">⬇️</button>
                                 </div>
+                                <button onclick="editDefenseRule(${idx})" style="background: #eab308; color: white; padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 0.8rem; margin-bottom: 4px;">✏️ 編輯</button>
                                 <button onclick="deleteDefenseRule(${idx})" style="background: #ef4444; color: white; padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 0.8rem;">❌ 刪除</button>
                             </div>
                         </div>
@@ -378,10 +381,52 @@
             } else {
                 defContainer.innerHTML = `<div style="color: #94a3b8; font-size: 0.9rem; font-style: italic;">目前無任何防禦規則，防線處於裸奔狀態...</div>`;
             }
+
+            // 🌟 渲染 R1 攻擊清單
+            const r1Container = document.getElementById('r1-attacks-container');
+            const btnSubmitR1 = document.getElementById('btn-submit-r1');
+            const r1Input = document.getElementById('new-r1-input');
             
-            for(let i=0; i<10; i++) {
-                const el = document.getElementById(`r1-atk-${i}`);
-                if (document.activeElement !== el) el.value = teamData.r1_attacks[i] || "";
+            if (teamData.r1_attacks && teamData.r1_attacks.length > 0) {
+                r1Container.innerHTML = teamData.r1_attacks.map((text, idx) => {
+                    const atkId = `r1-atk-text-${idx}`;
+                    const clampClass = expandedRules.has(atkId) ? "" : "text-clamp";
+                    
+                    return `
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; background: var(--bg-panel); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: opacity 0.2s; margin-bottom: 8px;">
+                            <div style="display: flex; gap: 10px; flex: 1; align-items: flex-start; overflow: hidden;">
+                                <span style="font-weight: bold; color: var(--theme-color); font-size: 1.1rem; margin-top: 2px; min-width: 20px;">${idx + 1}.</span>
+                                <div style="flex: 1; min-width: 0; margin-top: 1px;">
+                                    <div id="${atkId}" class="${clampClass}" style="white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.95rem; line-height: 1.5; transition: all 0.2s;">${escapeHTML(text)}</div>
+                                    <div class="toggle-btn" onclick="
+                                        const el = document.getElementById('${atkId}');
+                                        el.classList.toggle('text-clamp');
+                                        if (el.classList.contains('text-clamp')) expandedRules.delete('${atkId}');
+                                        else expandedRules.add('${atkId}');
+                                    ">🔍 展開/收合</div>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 6px; margin-left: 15px; flex-shrink: 0;">
+                                <button onclick="editR1Attack(${idx})" style="background: #eab308; color: white; padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 0.8rem;">✏️ 編輯</button>
+                                <button onclick="deleteR1Attack(${idx})" style="background: #ef4444; color: white; padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 0.8rem;">❌ 刪除</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                r1Container.innerHTML = `<div style="color: #94a3b8; font-size: 0.9rem; font-style: italic;">目前無任何攻擊指令...</div>`;
+            }
+
+            // 🌟 10 條防護機制 (如果滿 10 條且不是在編輯模式，就鎖住輸入框)
+            if (teamData.r1_attacks.length >= 10 && editingR1Index === -1) {
+                btnSubmitR1.disabled = true;
+                btnSubmitR1.innerText = "🛑 已達 10 條上限";
+                r1Input.disabled = true;
+            } else {
+                btnSubmitR1.disabled = false;
+                r1Input.disabled = false;
+                // 如果沒有在編輯，確保按鈕文字正常
+                if (editingR1Index === -1) btnSubmitR1.innerText = "🚀 送出並加入攻擊";
             }
 
             // R2 冷卻機制處理
@@ -546,18 +591,63 @@
             }
         }
 
-        for(let i=0; i<10; i++) {
-            document.getElementById(`r1-atk-${i}`).addEventListener('input', (e) => {
-                ws.send(JSON.stringify({ action: "sync_draft", team: TEAM, type: "atk", index: i, text: e.target.value }));
-            });
-        }
-
-        function addDefenseRule() {
+        // --- 防禦規則操作 ---
+        function submitDefenseRule() {
             const input = document.getElementById('new-defense-input');
             const text = input.value.trim();
             if (!text) return alert("⚠️ 規則不能為空！");
-            ws.send(JSON.stringify({ action: "add_defense", team: TEAM, text: text }));
+            
+            if (editingDefenseIndex > -1) {
+                ws.send(JSON.stringify({ action: "edit_defense", team: TEAM, index: editingDefenseIndex, text: text }));
+                editingDefenseIndex = -1; // 結束編輯模式
+                document.getElementById('btn-submit-defense').innerText = `➕ 送出並加入規則`;
+            } else {
+                ws.send(JSON.stringify({ action: "add_defense", team: TEAM, text: text }));
+            }
             input.value = ""; 
+        }
+
+        function editDefenseRule(idx) {
+            const rule = windowLastState.teams[TEAM].defense[idx];
+            // 相容物件與字串格式
+            document.getElementById('new-defense-input').value = typeof rule === 'string' ? rule : rule.text;
+            editingDefenseIndex = idx;
+            document.getElementById('btn-submit-defense').innerText = `💾 儲存修改 (規則 ${idx + 1})`;
+            document.getElementById('new-defense-input').focus();
+        }
+
+        // --- R1 攻擊指令操作 ---
+        function submitR1Attack() {
+            const input = document.getElementById('new-r1-input');
+            const text = input.value.trim();
+            if (!text) return alert("⚠️ 攻擊指令不能為空！");
+            
+            if (editingR1Index > -1) {
+                ws.send(JSON.stringify({ action: "edit_r1_attack", team: TEAM, index: editingR1Index, text: text }));
+                editingR1Index = -1;
+                document.getElementById('btn-submit-r1').innerText = `🚀 送出並加入攻擊`;
+            } else {
+                ws.send(JSON.stringify({ action: "add_r1_attack", team: TEAM, text: text }));
+            }
+            input.value = ""; 
+        }
+
+        function editR1Attack(idx) {
+            document.getElementById('new-r1-input').value = windowLastState.teams[TEAM].r1_attacks[idx];
+            editingR1Index = idx;
+            
+            // 解除可能被 10 條上限鎖定的按鈕
+            const btn = document.getElementById('btn-submit-r1');
+            btn.disabled = false;
+            document.getElementById('new-r1-input').disabled = false;
+            
+            btn.innerText = `💾 儲存修改 (攻擊 ${idx + 1})`;
+            document.getElementById('new-r1-input').focus();
+        }
+
+        function deleteR1Attack(idx) {
+            if (!confirm("確定要刪除這條攻擊指令嗎？")) return;
+            ws.send(JSON.stringify({ action: "delete_r1_attack", team: TEAM, index: idx }));
         }
 
         function deleteDefenseRule(idx) {
