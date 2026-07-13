@@ -14,6 +14,9 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import asyncio
 from fastapi.responses import JSONResponse
+import hashlib
+import random
+import string
 
 # ==========================================
 # ⚙️ 系統設定與初始化
@@ -43,6 +46,26 @@ os.makedirs("static", exist_ok=True)
 app.mount(f"{BASE_PATH}/static", StaticFiles(directory="static"), name="static")
 
 # ==========================================
+# 🔐 拋棄式密碼與加密管理
+# ==========================================
+PASSWORD_SALT = "CSIE_CAMP_PROMPT_BATTLE_6767"
+
+def hash_password(pwd: str) -> str:
+    return hashlib.sha256((pwd + PASSWORD_SALT).encode()).hexdigest()
+
+ADMIN_PWD_HASH = hash_password(os.environ.get("ADMIN_PWD", "admin67"))
+
+# 在記憶體中維護當前的紅藍隊密碼 (預設給一組初始值)
+active_passwords = {
+    "red": "r6767",
+    "blue": "b6767"
+}
+active_hashes = {
+    "red": hash_password(active_passwords["red"]),
+    "blue": hash_password(active_passwords["blue"])
+}
+
+# ==========================================
 # 🔐 登入登出與身分驗證 (Cookie)
 # ==========================================
 class LoginRequest(BaseModel):
@@ -60,19 +83,19 @@ BLUE_PWD = os.environ.get("BLUE_PWD", "blue123")
 
 @app.post(f"{BASE_PATH}/api/login")
 async def api_login(req: LoginRequest, response: Response):
-    credentials = {
-        "admin": {"pwd": ADMIN_PWD, "redirect": f"{BASE_PATH}/admin"},
-        "red": {"pwd": RED_PWD, "redirect": f"{BASE_PATH}/team?team=red"},
-        "blue": {"pwd": BLUE_PWD, "redirect": f"{BASE_PATH}/team?team=blue"}
-    }
+    input_hash = hash_password(req.password)
     
-    user = credentials.get(req.username)
-    if user and user["pwd"] == req.password:
-        # 🎯 登入成功：發配通行證 (HttpOnly 確保前端 JS 無法偷看或竄改)
+    # 驗證管理員
+    if req.username == "admin" and input_hash == ADMIN_PWD_HASH:
+        response.set_cookie(key="camp_role", value="admin", httponly=True)
+        return {"success": True, "redirect_url": f"{BASE_PATH}/admin"}
+        
+    # 驗證紅藍隊 (使用動態 Hash)
+    if req.username in ["red", "blue"] and input_hash == active_hashes[req.username]:
         response.set_cookie(key="camp_role", value=req.username, httponly=True)
-        return {"success": True, "redirect_url": user["redirect"]}
+        return {"success": True, "redirect_url": f"{BASE_PATH}/team?team={req.username}"}
     
-    return {"success": False, "msg": "帳號或密碼錯誤，請重新輸入！"}
+    return {"success": False, "msg": "帳號或密碼錯誤！(或是這組密碼已經過期)"}
 
 @app.post(f"{BASE_PATH}/api/logout")
 async def api_logout(response: Response):
@@ -390,6 +413,12 @@ def download_log():
 # ==========================================
 @app.websocket(f"{BASE_PATH}/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # 🌟 1. 嚴格身分校驗：直接看 Cookie，防 F12 偽造
+    user_role = websocket.cookies.get("camp_role")
+    if user_role not in ["admin", "red", "blue"]:
+        await websocket.close(code=4001)
+        return
+        
     await manager.connect(websocket)
     try:
         while True:
@@ -399,25 +428,47 @@ async def websocket_endpoint(websocket: WebSocket):
             with state_lock:
                 phase = match_state["phase"]
                 
+                # 🌟 2. 鎖死目標隊伍：小隊員只能操作自己，管理員可以指定操作對象
+                target_team = user_role if user_role in ["red", "blue"] else data.get("team")
+                
+                # 防禦越權：阻擋小隊員呼叫 admin_ 指令
+                if action.startswith("admin_") and user_role != "admin":
+                    continue
+
+                # 🛡️ 安全防護：如果是針對小隊操作的指令，必須確保 target_team 合法
+                team_actions = ["add_defense", "toggle_defense", "delete_defense", "move_defense", "edit_defense", 
+                                "add_r1_attack", "delete_r1_attack", "edit_r1_attack", "launch_attack"]
+
+                if action in team_actions and target_team not in ["red", "blue"]:
+                    log_event(f"⚠️ 忽略非法操作：{action} 找不到合法目標隊伍 ({target_team})")
+                    continue
+
+                # --- 🌟 3. 新增：關主刷新拋棄式密碼 ---
+                if action == "admin_rotate_pwd":
+                    # 產生 4 碼隨機英數字 (例如: A7X2)
+                    active_passwords["red"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                    active_passwords["blue"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                    active_hashes["red"] = hash_password(active_passwords["red"])
+                    active_hashes["blue"] = hash_password(active_passwords["blue"])
+                    
+                    # 💥 強制踢掉所有現存的紅藍隊連線
+                    for conn in manager.active_connections:
+                        if conn.cookies.get("camp_role") in ["red", "blue"]:
+                            asyncio.create_task(conn.close(code=4001))
+                            
+                    # 只把新密碼回傳給關主
+                    await websocket.send_json({"action": "pwd_updated", "pwds": active_passwords})
+                    log_event("🔄 關主已刷新紅藍隊密碼，舊玩家已被強制踢下線！")
+                    continue
+                
+                # --- 新增：關主索取當前密碼 (重新整理網頁時用) ---
+                elif action == "admin_get_pwd":
+                    await websocket.send_json({"action": "pwd_updated", "pwds": active_passwords})
+                    continue
+                
                 # --- 小隊操作 ---
-                if action == "update_defense" and phase == "R2_RUNNING":
-                    # 第二輪熱更新防禦
-                    team = data["team"]
-                    text = data["text"]
-                    match_state[team]["defense"] = text
-                    
-                    # 🌟 新增：記錄防禦演進史 (保存每次修改的版本與時間)
-                    if "defense_history" not in match_state[team]:
-                        match_state[team]["defense_history"] = []
-                    match_state[team]["defense_history"].append({
-                        "timestamp": time.strftime('%H:%M:%S'),
-                        "defense": text
-                    })
-                    
-                    log_event(f"🛡️ {'紅隊' if team=='red' else '藍隊'} 更新了防禦護欄！")
-                    
                 elif action == "launch_attack" and phase == "R2_RUNNING":
-                    team, atk_text = data["team"], data["text"]
+                    team, atk_text = target_team, data["text"]
                     curr = time.time()
                     cd_dur = match_state.get("cd_duration", 7)
                     if curr - match_state[team]["last_attack_time"] >= cd_dur and atk_text.strip():
@@ -509,7 +560,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # --- 防禦清單操作 (含勾選狀態) ---
                 elif action == "add_defense":
-                    target_team = data.get("team") # 🌟 修正：精準抓出是哪隊發送的
                     text = data.get("text", "").strip()
                     if target_team and text:
                         # 存入字典，預設 active 為 True
@@ -521,7 +571,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             match_state[target_team]["max_defense_count"] = active_count
                             
                 elif action == "toggle_defense":
-                    target_team = data.get("team") # 🌟 修正
                     idx = data.get("index")
                     if target_team and 0 <= idx < len(match_state[target_team]["defense"]):
                         # 反轉該條規則的勾選狀態
@@ -534,7 +583,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             match_state[target_team]["max_defense_count"] = active_count
 
                 elif action == "delete_defense":
-                    target_team = data.get("team") # 🌟 修正
                     idx = data.get("index")
                     if target_team and 0 <= idx < len(match_state[target_team]["defense"]):
                         match_state[target_team]["defense"].pop(idx)
@@ -542,7 +590,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # --- 新增：防禦清單上下移動 ---
                 elif action == "move_defense":
-                    target_team = data.get("team")
                     idx = data.get("index")
                     direction = data.get("direction") # -1 為上移，1 為下移
                     
@@ -557,7 +604,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # --- 新增/刪除 第一輪攻擊 ---
                 elif action == "add_r1_attack":
-                    target_team = data.get("team")
                     text = data.get("text", "").strip()
                     if target_team and text:
                         # 限制最多只能 10 條
@@ -565,21 +611,18 @@ async def websocket_endpoint(websocket: WebSocket):
                             match_state[target_team]["r1_attacks"].append(text)
 
                 elif action == "delete_r1_attack":
-                    target_team = data.get("team")
                     idx = data.get("index")
                     if target_team and 0 <= idx < len(match_state[target_team]["r1_attacks"]):
                         match_state[target_team]["r1_attacks"].pop(idx)
 
                 # --- 編輯功能 (防禦與攻擊) ---
                 elif action == "edit_defense":
-                    target_team = data.get("team")
                     idx = data.get("index")
                     text = data.get("text", "").strip()
                     if target_team and text and 0 <= idx < len(match_state[target_team]["defense"]):
                         match_state[target_team]["defense"][idx]["text"] = text
 
                 elif action == "edit_r1_attack":
-                    target_team = data.get("team")
                     idx = data.get("index")
                     text = data.get("text", "").strip()
                     if target_team and text and 0 <= idx < len(match_state[target_team]["r1_attacks"]):

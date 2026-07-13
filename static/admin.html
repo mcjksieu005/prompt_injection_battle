@@ -71,6 +71,21 @@
         </div>
         <button class="btn-danger" onclick="doLogout()">🚪 登出系統</button>
     </div>
+    
+    <div class="panel" style="background: #fffbeb; border-color: #f59e0b;">
+        <h2 style="color: #d97706; margin-bottom: 15px;">🔑 本局拋棄式登入密碼 (請寫給小隊員)</h2>
+        <div style="display: flex; gap: 20px; font-size: 1.5rem; font-weight: bold; font-family: monospace;">
+            <div style="flex: 1; background: #fee2e2; padding: 15px; border-radius: 8px; color: #ef4444; border: 2px dashed #fca5a5;">
+                🔴 紅隊帳號: red <br>密碼: <span id="pwd-red">載入中...</span>
+            </div>
+            <div style="flex: 1; background: #dbeafe; padding: 15px; border-radius: 8px; color: #3b82f6; border: 2px dashed #93c5fd;">
+                🔵 藍隊帳號: blue <br>密碼: <span id="pwd-blue">載入中...</span>
+            </div>
+        </div>
+        <button onclick="rotatePasswords()" style="width: 100%; margin-top: 15px; background: #f59e0b; color: white; padding: 12px; font-size: 1.1rem;">
+            🔄 產生新回合隨機密碼 (並強制踢除舊玩家)
+        </button>
+    </div>
 
     <div class="panel">
         <h2>🎬 賽程控制</h2>
@@ -204,6 +219,7 @@
                 statusEl.className = "connected";
                 statusEl.style.display = "block";
                 setTimeout(() => statusEl.style.display = "none", 2000);
+                ws.send(JSON.stringify({ action: "admin_get_pwd" })); // 🌟 連線成功時索取當前密碼
             };
 
             ws.onclose = () => {
@@ -214,8 +230,18 @@
             };
 
             ws.onmessage = (event) => {
-                globalMatchState = JSON.parse(event.data); // 存下最新的戰報
-                updateDashboard(globalMatchState);                // 更新畫面
+                const data = JSON.parse(event.data);
+                
+                // 🌟 如果是密碼更新的專屬封包，更新 UI 後直接 return
+                if (data.action === "pwd_updated") {
+                    document.getElementById('pwd-red').innerText = data.pwds.red;
+                    document.getElementById('pwd-blue').innerText = data.pwds.blue;
+                    return;
+                }
+                
+                // 正常的戰況更新
+                globalMatchState = data;
+                updateDashboard(globalMatchState);
             };
         }
 
@@ -313,6 +339,11 @@
             // 5. 檔案下載後，釋放瀏覽器記憶體
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        function rotatePasswords() {
+            if(!confirm("⚠️ 確定要產生新密碼嗎？\n這會導致目前正在線上的紅/藍隊員立刻斷線！\n(建議在兩場比賽交接時使用)")) return;
+            ws.send(JSON.stringify({ action: "admin_rotate_pwd" }));
         }
 
         // 啟動連線
