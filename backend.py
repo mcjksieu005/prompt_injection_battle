@@ -542,6 +542,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     if target_team and 0 <= idx < len(match_state[target_team]["defense"]):
                         match_state[target_team]["defense"].pop(idx)
                         # 刪除不會讓 max_defense_count 變小，所以不用更新最大值
+
+                # --- 新增：防禦清單上下移動 ---
+                elif action == "move_defense":
+                    target_team = data.get("team")
+                    idx = data.get("index")
+                    direction = data.get("direction") # -1 為上移，1 為下移
+                    
+                    if target_team and idx is not None and direction in [-1, 1]:
+                        def_list = match_state[target_team]["defense"]
+                        new_idx = idx + direction
+                        
+                        # 確保移動範圍沒有超出陣列邊界
+                        if 0 <= idx < len(def_list) and 0 <= new_idx < len(def_list):
+                            # Python 陣列元素交換的寫法
+                            def_list[idx], def_list[new_idx] = def_list[new_idx], def_list[idx]
                 
                 # --- 關主操作 ---
                 elif action == "admin_set_phase":

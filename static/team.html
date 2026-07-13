@@ -334,14 +334,30 @@
                     const text = typeof ruleObj === 'string' ? ruleObj : ruleObj.text;
                     const isActive = typeof ruleObj === 'string' ? true : ruleObj.active;
                     const textStyle = isActive ? "" : "text-decoration: line-through; color: #94a3b8; opacity: 0.7;";
+                    const ruleId = `rule-text-${idx}`;
                     
                     return `
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; background: var(--bg-panel); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: opacity 0.2s; margin-bottom: 8px;">
-                            <div style="display: flex; gap: 12px; flex: 1; align-items: flex-start; overflow: hidden;">
-                                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleDefenseRule(${idx})" style="margin-top: 2px; cursor: pointer; transform: scale(1.3); flex-shrink: 0;">
-                                <span style="white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.95rem; transition: all 0.2s; line-height: 1.4; ${textStyle}">${escapeHTML(text)}</span>
+                            
+                            <div style="display: flex; gap: 10px; flex: 1; align-items: flex-start; overflow: hidden;">
+                                <span style="font-weight: bold; color: var(--theme-color); font-size: 1.1rem; margin-top: 2px; min-width: 20px;">${idx + 1}.</span>
+                                
+                                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleDefenseRule(${idx})" style="margin-top: 4px; cursor: pointer; transform: scale(1.3); flex-shrink: 0;">
+                                
+                                <div style="flex: 1; min-width: 0; margin-top: 1px;">
+                                    <div id="${ruleId}" class="text-clamp" style="white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.95rem; line-height: 1.5; transition: all 0.2s; ${textStyle}">${escapeHTML(text)}</div>
+                                    <div class="toggle-btn" onclick="document.getElementById('${ruleId}').classList.toggle('text-clamp')">🔍 展開/收合</div>
+                                </div>
                             </div>
-                            <button onclick="deleteDefenseRule(${idx})" style="background: #ef4444; color: white; padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; margin-left: 15px; flex-shrink: 0; opacity: 0.8; width: auto; font-size: 0.8rem;">❌</button>
+
+                            <div style="display: flex; flex-direction: column; gap: 6px; margin-left: 15px; flex-shrink: 0;">
+                                <div style="display: flex; gap: 4px;">
+                                    <button onclick="moveDefenseRule(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} style="background: #f1f5f9; color: #475569; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; width: 100%; font-size: 0.8rem;">⬆️</button>
+                                    <button onclick="moveDefenseRule(${idx}, 1)" ${idx === teamData.defense.length - 1 ? 'disabled' : ''} style="background: #f1f5f9; color: #475569; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; width: 100%; font-size: 0.8rem;">⬇️</button>
+                                </div>
+                                <button onclick="deleteDefenseRule(${idx})" style="background: #ef4444; color: white; padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 0.8rem;">❌ 刪除</button>
+                            </div>
+
                         </div>
                     `;
                 }).join('');
@@ -522,6 +538,10 @@
 
         function toggleDefenseRule(idx) {
             ws.send(JSON.stringify({ action: "toggle_defense", team: TEAM, index: idx }));
+        }
+
+        function moveDefenseRule(idx, direction) {
+            ws.send(JSON.stringify({ action: "move_defense", team: TEAM, index: idx, direction: direction }));
         }
         
         function launchAttack() {
