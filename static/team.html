@@ -168,6 +168,28 @@
             font-weight: bold; display: inline-block; margin-top: 5px;
         }
         .toggle-btn:hover { text-decoration: underline; }
+
+        /* 🌟 美化防禦與攻擊清單的右側滾動條，使其變成細緻的扁平化設計 */
+        #defense-list-container::-webkit-scrollbar,
+        #r1-attacks-container::-webkit-scrollbar {
+            width: 6px; /* 滾動條寬度 */
+        }
+
+        #defense-list-container::-webkit-scrollbar-track,
+        #r1-attacks-container::-webkit-scrollbar-track {
+            background: transparent; /* 軌道背景透明 */
+        }
+
+        #defense-list-container::-webkit-scrollbar-thumb,
+        #r1-attacks-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* 滾動條滑塊顏色 */
+            border-radius: 3px;
+        }
+
+        #defense-list-container::-webkit-scrollbar-thumb:hover,
+        #r1-attacks-container::-webkit-scrollbar-thumb:hover {
+            background: var(--theme-color); /* 滑鼠滑過時變成小隊主題色 */
+        }
     </style>
 </head>
 <body>
@@ -196,7 +218,7 @@
             <div class="input-group" style="background: var(--bg-page); padding: 15px; border-radius: 8px; border: 2px dashed var(--border-color); margin-bottom: 20px;">
                 <label style="font-size: 1.1rem; color: var(--theme-color);">🛡️ 防禦護欄清單 (Defense Rules)</label>
                 
-                <div id="defense-list-container" style="margin-top: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                <div id="defense-list-container" style="margin-top: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 4px;">
                     </div>
                 
                 <textarea id="new-defense-input" rows="2" placeholder="輸入單條防禦規則... (按送出後才會生效)"></textarea>
@@ -208,7 +230,7 @@
                 <div class="input-group" style="background: var(--bg-page); padding: 15px; border-radius: 8px; border: 2px dashed var(--border-color); margin-bottom: 20px;">
                     <label style="font-size: 1.1rem; color: var(--theme-color);">⚔️ 第一輪攻擊指令 (上限 10 條)</label>
                     
-                    <div id="r1-attacks-container" style="margin-top: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                    <div id="r1-attacks-container" style="margin-top: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 4px;">
                         </div>
                     
                     <textarea id="new-r1-input" rows="2" placeholder="輸入單次攻擊指令... (按送出後才會生效)"></textarea>
