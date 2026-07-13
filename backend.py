@@ -23,7 +23,6 @@ import string
 # ==========================================
 load_dotenv()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-TARGET_MODEL = "qwen/qwen-2.5-7b-instruct"
 BASE_PATH = os.environ.get("BASE_PATH", "/prompt_battle")
 
 client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
@@ -53,12 +52,18 @@ PASSWORD_SALT = "CSIE_CAMP_PROMPT_BATTLE_6767"
 def hash_password(pwd: str) -> str:
     return hashlib.sha256((pwd + PASSWORD_SALT).encode()).hexdigest()
 
-ADMIN_PWD_HASH = hash_password(os.environ.get("ADMIN_PWD", "admin67"))
+# 🌟 1. 統一在這裡讀取環境變數 (沒設的話就用預設值)
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin6767") 
+ADMIN_PWD = os.environ.get("ADMIN_PWD", "admin67")
+RED_INIT_PWD = os.environ.get("RED_PWD", "red67")
+BLUE_INIT_PWD = os.environ.get("BLUE_PWD", "blue67")
 
-# 在記憶體中維護當前的紅藍隊密碼 (預設給一組初始值)
+ADMIN_PWD_HASH = hash_password(ADMIN_PWD)
+
+# 🌟 2. 第一場比賽的初始密碼，使用環境變數的設定
 active_passwords = {
-    "red": "r6767",
-    "blue": "b6767"
+    "red": RED_INIT_PWD,
+    "blue": BLUE_INIT_PWD
 }
 active_hashes = {
     "red": hash_password(active_passwords["red"]),
@@ -77,25 +82,26 @@ class LoginRequest(BaseModel):
 async def serve_login():
     return FileResponse("static/login.html")
 
-ADMIN_PWD = os.environ.get("ADMIN_PWD", "admin123")
-RED_PWD = os.environ.get("RED_PWD", "red123")
-BLUE_PWD = os.environ.get("BLUE_PWD", "blue123")
-
 @app.post(f"{BASE_PATH}/api/login")
 async def api_login(req: LoginRequest, response: Response):
     input_hash = hash_password(req.password)
     
-    # 驗證管理員
-    if req.username == "admin" and input_hash == ADMIN_PWD_HASH:
+    # 驗證管理員 (改用自訂的隱藏帳號)
+    if req.username == ADMIN_USERNAME and input_hash == ADMIN_PWD_HASH:
+        # 🌟 核心防禦細節：即使帳號是 admin6767，發出去的 Cookie 角色依然要是 "admin"
+        # 這樣就不會牽動到後面所有的權限檢查邏輯！
         response.set_cookie(key="camp_role", value="admin", httponly=True)
         return {"success": True, "redirect_url": f"{BASE_PATH}/admin"}
         
     # 驗證紅藍隊 (使用動態 Hash)
     if req.username in ["red", "blue"] and input_hash == active_hashes[req.username]:
-        response.set_cookie(key="camp_role", value=req.username, httponly=True)
+        # 🌟 核心修改：Cookie 值改為 "隊伍_當前密碼" (例如: red_red67)
+        cookie_value = f"{req.username}_{active_passwords[req.username]}"
+        response.set_cookie(key="camp_role", value=cookie_value, httponly=True)
         return {"success": True, "redirect_url": f"{BASE_PATH}/team?team={req.username}"}
     
-    return {"success": False, "msg": "帳號或密碼錯誤！(或是這組密碼已經過期)"}
+    
+    return {"success": False, "msg": "帳號或密碼錯誤！"}
 
 @app.post(f"{BASE_PATH}/api/logout")
 async def api_logout(response: Response):
@@ -124,16 +130,19 @@ async def serve_scoreboard(request: Request):
 
 @app.get(f"{BASE_PATH}/team")
 async def serve_team(request: Request):
-    # 1. 抓出這張瀏覽器的 Cookie 身分
-    role = request.cookies.get("camp_role")
-    
-    # 2. 絕對精準抓取網址列上的 ?team=xxx
+    raw_role = request.cookies.get("camp_role") or ""
     target_team = request.query_params.get("team")
     
-    # 3. 鐵壁防禦：身分必須「完全等於」網址要求的隊伍，否則全部踢走
-    # （也就是說，role 是 red 只能去 ?team=red，連 admin 來都不放行）
-    if role != target_team:
+    # 🌟 核心修改：拆解 Cookie，驗證隊伍與密碼是否皆正確
+    if "_" not in raw_role:
         return RedirectResponse(url=f"{BASE_PATH}/login")
+        
+    role, cookie_pwd = raw_role.split("_", 1)
+    
+    with state_lock:
+        # 如果隊伍不對，或是 Cookie 裡的密碼跟現在後端存的密碼不符，直接踢走
+        if role != target_team or cookie_pwd != active_passwords.get(role):
+            return RedirectResponse(url=f"{BASE_PATH}/login")
         
     return FileResponse("static/team.html")
 
@@ -398,11 +407,16 @@ async def timer_daemon():
             await manager.broadcast_state()
 
 # ==========================================
-# 🔌 一鍵下載完整戰報 API (請加在 websocket 路由的上方或下方)
+# 🔌 一鍵下載完整戰報 API
 # ==========================================
 @app.get(f"{BASE_PATH}/api/download_log")
-def download_log():
-    # 下載時會將當下的 match_state 包裝成 JSON 檔案回傳
+def download_log(request: Request):  # 🌟 加上 request 參數
+    # 🌟 加上權限驗證：只有關主可以下載戰報！
+    role = request.cookies.get("camp_role")
+    if role != "admin":
+        # 如果是小隊員想偷看，直接回傳 403 拒絕存取
+        return JSONResponse(status_code=403, content={"error": "Access Denied: 你沒有權限下載機密戰報！"})
+        
     return JSONResponse(
         content=match_state, 
         headers={"Content-Disposition": 'attachment; filename="prompt_battle_record.json"'}
@@ -413,12 +427,24 @@ def download_log():
 # ==========================================
 @app.websocket(f"{BASE_PATH}/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # 🌟 1. 嚴格身分校驗：直接看 Cookie，防 F12 偽造
-    user_role = websocket.cookies.get("camp_role")
-    if user_role not in ["admin", "red", "blue"]:
-        await websocket.close(code=4001)
-        return
-        
+    raw_role = websocket.cookies.get("camp_role") or ""
+    
+    # 🌟 核心修改：解包並嚴格校驗 Cookie 密碼時效性
+    if "_" in raw_role:
+        user_role, cookie_pwd = raw_role.split("_", 1)
+    else:
+        user_role, cookie_pwd = raw_role, ""
+
+    with state_lock:
+        # 判定身分合法性（管理員不帶底線，紅藍隊必須比對當前隨機密碼）
+        if user_role == "admin":
+            pass
+        elif user_role in ["red", "blue"] and cookie_pwd == active_passwords.get(user_role):
+            pass
+        else:
+            await websocket.close(code=4001)
+            return
+            
     await manager.connect(websocket)
     try:
         while True:
@@ -427,36 +453,36 @@ async def websocket_endpoint(websocket: WebSocket):
             
             with state_lock:
                 phase = match_state["phase"]
-                
-                # 🌟 2. 鎖死目標隊伍：小隊員只能操作自己，管理員可以指定操作對象
                 target_team = user_role if user_role in ["red", "blue"] else data.get("team")
                 
-                # 防禦越權：阻擋小隊員呼叫 admin_ 指令
                 if action.startswith("admin_") and user_role != "admin":
                     continue
 
-                # 🛡️ 安全防護：如果是針對小隊操作的指令，必須確保 target_team 合法
+                # 🛡️ 補上這段安全防護：防禦異常封包導致伺服器當機
                 team_actions = ["add_defense", "toggle_defense", "delete_defense", "move_defense", "edit_defense", 
                                 "add_r1_attack", "delete_r1_attack", "edit_r1_attack", "launch_attack"]
-
                 if action in team_actions and target_team not in ["red", "blue"]:
-                    log_event(f"⚠️ 忽略非法操作：{action} 找不到合法目標隊伍 ({target_team})")
-                    continue
+                    continue # 發現沒有明確目標隊伍的操作，直接無痕丟棄
 
-                # --- 🌟 3. 新增：關主刷新拋棄式密碼 ---
+                # --- 關主操作：刷新拋棄式密碼 ---
                 if action == "admin_rotate_pwd":
-                    # 產生 6 碼隨機英數字 (例如: a1b2c3)
-                    active_passwords["red"] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-                    active_passwords["blue"] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+                    active_passwords["red"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                    active_passwords["blue"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
                     active_hashes["red"] = hash_password(active_passwords["red"])
                     active_hashes["blue"] = hash_password(active_passwords["blue"])
                     
-                    # 💥 強制踢掉所有現存的紅藍隊連線
+                    # 💥 修正：建立一個即將踢除的連線清單
+                    to_kick = []
                     for conn in manager.active_connections:
-                        if conn.cookies.get("camp_role") in ["red", "blue"]:
-                            asyncio.create_task(conn.close(code=4001))
+                        conn_role = (conn.cookies.get("camp_role") or "").split("_")[0]
+                        if conn_role in ["red", "blue"]:
+                            to_kick.append(conn)
                             
-                    # 只把新密碼回傳給關主
+                    # 🌟 先從廣播清單移除，再執行斷線，徹底防止隨後的廣播再發給他們
+                    for conn in to_kick:
+                        manager.disconnect(conn)
+                        asyncio.create_task(conn.close(code=4001))
+                            
                     await websocket.send_json({"action": "pwd_updated", "pwds": active_passwords})
                     log_event("🔄 關主已刷新紅藍隊密碼，舊玩家已被強制踢下線！")
                     continue

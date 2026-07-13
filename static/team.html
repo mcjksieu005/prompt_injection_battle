@@ -316,7 +316,16 @@
 
         function connect() {
             ws = new WebSocket(wsUrl);
-            ws.onclose = () => setTimeout(connect, 3000);
+            ws.onclose = (event) => {
+                // 🌟 4001 代表是被關主強制驅逐（換密碼）
+                if (event.code === 4001) {
+                    alert("🔴 本回合已結束或密碼已變更，請向關主索取新密碼重新登入！");
+                    window.location.href = basePath + "/login";
+                } else {
+                    // 其他突發性斷線才允許 3 秒後自動重連
+                    setTimeout(connect, 3000);
+                }
+            };
             ws.onmessage = (event) => updateUI(JSON.parse(event.data));
         }
 
