@@ -15,9 +15,6 @@ from contextlib import asynccontextmanager
 import asyncio
 from fastapi.responses import JSONResponse
 
-# 新增一個全域鎖來防止 Race Condition (多個小隊員同時按鈕導致資料覆寫)
-state_lock = asyncio.Lock()
-
 # ==========================================
 # ⚙️ 系統設定與初始化
 # ==========================================
@@ -303,6 +300,10 @@ async def evaluate_round_1():
                 is_error = True
                 
             with state_lock:
+                # 🌟 加入這行：如果遊戲已經被重置或切換階段，立刻中斷寫入
+                if match_state["phase"] != "R1_EVAL":
+                    return
+
                 pts = 0
                 hits = []
                 if not is_error:
@@ -376,8 +377,6 @@ async def timer_daemon():
 # ==========================================
 # 🔌 一鍵下載完整戰報 API (請加在 websocket 路由的上方或下方)
 # ==========================================
-from fastapi.responses import JSONResponse
-
 @app.get(f"{BASE_PATH}/api/download_log")
 def download_log():
     # 下載時會將當下的 match_state 包裝成 JSON 檔案回傳
