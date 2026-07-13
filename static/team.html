@@ -376,16 +376,7 @@
                                 
                                 <div style="flex: 1; min-width: 0; margin-top: 1px;">
                                     <div id="${ruleId}" class="${clampClass}" style="white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.95rem; line-height: 1.5; transition: all 0.2s; ${textStyle}">${escapeHTML(text)}</div>
-                                    
-                                    <div class="toggle-btn" onclick="
-                                        const el = document.getElementById('${ruleId}');
-                                        el.classList.toggle('text-clamp');
-                                        if (el.classList.contains('text-clamp')) {
-                                            expandedRules.delete('${ruleId}');
-                                        } else {
-                                            expandedRules.add('${ruleId}');
-                                        }
-                                    ">🔍 展開/收合</div>
+                                    <div class="toggle-btn" onclick="smartToggle('🛡️ 防禦規則詳細內容', '${ruleId}', false)">🔍 展開 / 放大</div>
                                 </div>
                             </div>
 
@@ -420,12 +411,7 @@
                                 <span style="font-weight: bold; color: var(--theme-color); font-size: 1.1rem; margin-top: 2px; min-width: 20px;">${idx + 1}.</span>
                                 <div style="flex: 1; min-width: 0; margin-top: 1px;">
                                     <div id="${atkId}" class="${clampClass}" style="white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.95rem; line-height: 1.5; transition: all 0.2s;">${escapeHTML(text)}</div>
-                                    <div class="toggle-btn" onclick="
-                                        const el = document.getElementById('${atkId}');
-                                        el.classList.toggle('text-clamp');
-                                        if (el.classList.contains('text-clamp')) expandedRules.delete('${atkId}');
-                                        else expandedRules.add('${atkId}');
-                                    ">🔍 展開/收合</div>
+                                    <div class="toggle-btn" onclick="smartToggle('⚔️ 攻擊指令詳細內容', '${atkId}', false)">🔍 展開 / 放大</div>
                                 </div>
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 6px; margin-left: 15px; flex-shrink: 0;">
@@ -513,22 +499,12 @@
                 // 🌟 改用動態 Class，並將點擊事件加入 Set 的增刪邏輯
                 const promptHtml = `
                     <div id="${promptId}" class="${promptClampClass}" style="margin-bottom: 4px; font-family: monospace; white-space: pre-wrap; word-break: break-all; background: var(--prompt-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); color: var(--text-main);">${escapeHTML(log.attack_prompt || "未記錄")}</div>
-                    <div class="toggle-btn" onclick="
-                        const el = document.getElementById('${promptId}');
-                        el.classList.toggle('text-clamp');
-                        if (el.classList.contains('text-clamp')) expandedLogs.delete('${promptId}');
-                        else expandedLogs.add('${promptId}');
-                    ">🔍 展開/收合 Prompt</div>
+                    <div class="toggle-btn" onclick="smartToggle('⚔️ 攻擊指令 (Prompt)', '${promptId}', true)">🔍 展開 / 放大</div>
                 `;
                 
                 const outputHtml = `
                     <div id="${outputId}" class="${outputClampClass}" style="font-family: monospace; white-space: pre-wrap; word-break: break-all; background: var(--output-bg); padding: 8px; border-radius: 4px; color: var(--muted-text);">${escapeHTML(log.llm_output || "無回應")}</div>
-                    <div class="toggle-btn" onclick="
-                        const el = document.getElementById('${outputId}');
-                        el.classList.toggle('text-clamp');
-                        if (el.classList.contains('text-clamp')) expandedLogs.delete('${outputId}');
-                        else expandedLogs.add('${outputId}');
-                    ">🔍 展開/收合 回應</div>
+                    <div class="toggle-btn" onclick="smartToggle('🤖 AI 回應內容 (Output)', '${outputId}', true)">🔍 展開 / 放大</div>
                 `;
 
                 const attackerTeam = log.isMine ? myTeam : oppTeam;
@@ -635,7 +611,10 @@
             document.getElementById('new-defense-input').value = typeof rule === 'string' ? rule : rule.text;
             editingDefenseIndex = idx;
             document.getElementById('btn-submit-defense').innerText = `💾 儲存修改 (規則 ${idx + 1})`;
-            document.getElementById('new-defense-input').focus();
+            // 🌟 獲取焦點並平滑滑動到畫面中央
+            const inputEl = document.getElementById('new-defense-input');
+            inputEl.focus();
+            inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
         // --- R1 攻擊指令操作 ---
@@ -661,10 +640,14 @@
             // 解除可能被 10 條上限鎖定的按鈕
             const btn = document.getElementById('btn-submit-r1');
             btn.disabled = false;
-            document.getElementById('new-r1-input').disabled = false;
-            
+
+            const inputEl = document.getElementById('new-r1-input');
+            inputEl.disabled = false;
             btn.innerText = `💾 儲存修改 (攻擊 ${idx + 1})`;
-            document.getElementById('new-r1-input').focus();
+            
+            // 🌟 獲取焦點並平滑滑動到畫面中央
+            inputEl.focus();
+            inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
         function deleteR1Attack(idx) {
@@ -690,6 +673,25 @@
             if(!text.trim()) return alert("⚠️ 攻擊指令不能為空！");
             ws.send(JSON.stringify({ action: "launch_attack", team: TEAM, text: text }));
             document.getElementById('r2-atk').value = ""; // 發射後清空輸入框
+        }
+
+        // --- 🌟 聰明展開函數 (判斷手機或電腦) ---
+        function smartToggle(title, elementId, isLog = false) {
+            // 如果螢幕寬度 <= 768px (手機版)，就開啟懸浮視窗
+            if (window.innerWidth <= 768) {
+                showTextModal(title, elementId);
+            } else {
+                // 電腦版：原地展開，並記錄到 Set 裡面防止被廣播蓋掉
+                const el = document.getElementById(elementId);
+                el.classList.toggle('text-clamp');
+                
+                const targetSet = isLog ? expandedLogs : expandedRules;
+                if (el.classList.contains('text-clamp')) {
+                    targetSet.delete(elementId);
+                } else {
+                    targetSet.add(elementId);
+                }
+            }
         }
 
         connect();
