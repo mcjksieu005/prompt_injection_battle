@@ -215,7 +215,7 @@
 
             ws.onmessage = (event) => {
                 globalMatchState = JSON.parse(event.data); // 存下最新的戰報
-                updateUI(globalMatchState);                // 更新畫面
+                updateDashboard(globalMatchState);                // 更新畫面
             };
         }
 
