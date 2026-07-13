@@ -1,7 +1,9 @@
 # AI 關鍵字攻防 - 正式版
 
 台大資訊營AI組 周宗穎
+
 GitHub連結：https://github.com/mcjksieu005/prompt_injection_battle
+
 營隊網站連結：https://csiecamp.csie.org/prompt_battle/
 
 ---
