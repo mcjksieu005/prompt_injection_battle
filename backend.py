@@ -47,7 +47,7 @@ app.mount(f"{BASE_PATH}/static", StaticFiles(directory="static"), name="static")
 # ==========================================
 # 🔐 拋棄式密碼與加密管理
 # ==========================================
-PASSWORD_SALT = "CSIE_CAMP_PROMPT_BATTLE_6767"
+PASSWORD_SALT = os.environ.get("PASSWORD_SALT", "CSIE_CAMP_PROMPT_BATTLE_6767")
 
 def hash_password(pwd: str) -> str:
     return hashlib.sha256((pwd + PASSWORD_SALT).encode()).hexdigest()
@@ -84,20 +84,30 @@ async def serve_login():
 
 @app.post(f"{BASE_PATH}/api/login")
 async def api_login(req: LoginRequest, response: Response):
+    await asyncio.sleep(0.5) # 🛡️ 刻意延遲 0.5 秒，完美防禦暴力破解腳本
+    
     input_hash = hash_password(req.password)
     
     # 驗證管理員 (改用自訂的隱藏帳號)
     if req.username == ADMIN_USERNAME and input_hash == ADMIN_PWD_HASH:
-        # 🌟 核心防禦細節：即使帳號是 admin6767，發出去的 Cookie 角色依然要是 "admin"
-        # 這樣就不會牽動到後面所有的權限檢查邏輯！
-        response.set_cookie(key="camp_role", value="admin", httponly=True)
+        response.set_cookie(
+            key="camp_role", 
+            value="admin",      # ✅ 修正：關主的 Cookie 值永遠是 "admin"
+            httponly=True, 
+            samesite="strict"
+        )
         return {"success": True, "redirect_url": f"{BASE_PATH}/admin"}
         
     # 驗證紅藍隊 (使用動態 Hash)
     if req.username in ["red", "blue"] and input_hash == active_hashes[req.username]:
         # 🌟 核心修改：Cookie 值改為 "隊伍_當前密碼" (例如: red_red67)
         cookie_value = f"{req.username}_{active_passwords[req.username]}"
-        response.set_cookie(key="camp_role", value=cookie_value, httponly=True)
+        response.set_cookie(
+            key="camp_role", 
+            value=cookie_value, 
+            httponly=True, 
+            samesite="strict"  # 🛡️ 拒絕任何第三方網站夾帶這個 Cookie
+        )
         return {"success": True, "redirect_url": f"{BASE_PATH}/team?team={req.username}"}
     
     

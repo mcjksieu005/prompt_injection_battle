@@ -272,8 +272,10 @@
             document.getElementById('in-advscore').checked = state.adv_score || false;
             if (state.current_model) document.getElementById('in-model').value = state.current_model;
 
+            const escapeHTML = (str) => (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
             // 日誌
-            const logsHtml = state.event_logs.map(log => `<div>${log}</div>`).join('');
+            const logsHtml = state.event_logs.map(log => `<div>${escapeHTML(log)}</div>`).join('');
             document.getElementById('admin-logs').innerHTML = logsHtml;
         }
 

@@ -167,10 +167,13 @@
                 banner.style.display = "none";
             }
 
+            // 🌟 加上這行過濾器
+            const escapeHTML = (str) => (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
             // 廣播日誌 (只顯示最新的 5 筆，避免塞滿螢幕)
             // 🌟 1. 先把新的 HTML 組合起來，存成字串，不要直接塞進網頁
             const newLogsHtml = state.event_logs.slice(0, 5).map(log => 
-                `<div class="log-entry">${log}</div>`
+                `<div class="log-entry">${escapeHTML(log)}</div>`
             ).join('');
 
             // 🌟 2. 治本防閃機制：拿新的字串跟記憶中的字串比對，不一樣才更新
