@@ -150,10 +150,21 @@
         /* 📱 手機版排版修正 */
         @media (max-width: 768px) {
             .main-container { flex-direction: column; }
-            .panel { height: 50vh; flex: none; } /* 讓上下兩塊各佔一半螢幕 */
+            .panel { height: 50vh; flex: none; } 
             .left-panel { border-right: none; border-bottom: 2px solid var(--border-color); }
             .right-panel { border-left: none; }
             .status-info { flex-wrap: wrap; justify-content: flex-end; }
+            
+            /* 🌟 手機版專屬：大幅加高所有多行輸入框 */
+            textarea {
+                min-height: 150px !important; /* 強制拉高，大約提供 6~7 行的可視空間 */
+                font-size: 16px !important;   /* 🌟 神級細節：iOS Safari 規定輸入框字體如果小於 16px，點擊時畫面會強制放大導致破版，這行能完美防止！ */
+            }
+            
+            /* 當小隊員點擊輸入框準備打字時，再稍微變大一點，提供類似沉浸式視窗的體驗 */
+            textarea:focus {
+                min-height: 200px !important; 
+            }
         }
 
         /* 🔍 戰報文字折疊效果 */
