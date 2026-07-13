@@ -466,8 +466,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # --- 關主操作：刷新拋棄式密碼 ---
                 if action == "admin_rotate_pwd":
-                    active_passwords["red"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
-                    active_passwords["blue"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                    active_passwords["red"] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+                    active_passwords["blue"] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
                     active_hashes["red"] = hash_password(active_passwords["red"])
                     active_hashes["blue"] = hash_password(active_passwords["blue"])
                     
