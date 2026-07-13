@@ -445,9 +445,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # --- 🌟 3. 新增：關主刷新拋棄式密碼 ---
                 if action == "admin_rotate_pwd":
-                    # 產生 4 碼隨機英數字 (例如: A7X2)
-                    active_passwords["red"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
-                    active_passwords["blue"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+                    # 產生 6 碼隨機英數字 (例如: a1b2c3)
+                    active_passwords["red"] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+                    active_passwords["blue"] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
                     active_hashes["red"] = hash_password(active_passwords["red"])
                     active_hashes["blue"] = hash_password(active_passwords["blue"])
                     
