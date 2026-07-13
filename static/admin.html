@@ -301,7 +301,7 @@
             const now = new Date();
             // 格式化時間 (例如 2026-07-13_14-30-00)
             const timeString = now.toISOString().replace(/T/, '_').replace(/:/g, '-').slice(0, 19);
-            const fileName = `Prompt_Battle_戰報_${timeString}.json`;
+            const fileName = `Prompt_Battle_Report_${timeString}.json`;
             
             // 4. 動態產生一個 <a> 標籤，模擬點擊下載，然後馬上把它刪掉
             const a = document.createElement('a');

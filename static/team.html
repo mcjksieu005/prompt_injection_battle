@@ -193,27 +193,24 @@
                 <div id="keyword-container"></div>
             </div>
 
-            <!-- 第一輪視圖 -->
-            <div id="view-r1" class="view-section active">
-                <p>📝 <strong>盲打佈局</strong>：輸入即時同步至伺服器。</p>
-                <div class="input-group">
-                    <label>🛡️ Defense Prompt (防禦指令)</label>
-                    <textarea id="r1-def" rows="3" placeholder="設定你的防禦護欄..."></textarea>
-                </div>
-                <div id="r1-attacks-container">
-                    <!-- JS 動態生成 10 個攻擊輸入框 -->
-                </div>
+            <div class="input-group" style="background: var(--bg-page); padding: 15px; border-radius: 8px; border: 2px dashed var(--border-color); margin-bottom: 20px;">
+                <label style="font-size: 1.1rem; color: var(--theme-color);">🛡️ 防禦護欄清單 (Defense Rules)</label>
+                
+                <div id="defense-list-container" style="margin-top: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                    </div>
+                
+                <textarea id="new-defense-input" rows="2" placeholder="輸入單條防禦規則... (按送出後才會生效)"></textarea>
+                <button onclick="addDefenseRule()" style="margin-top: 10px; background: var(--theme-color); color: white;">➕ 送出並加入規則</button>
             </div>
 
-            <!-- 第二輪視圖 -->
+            <div id="view-r1" class="view-section active">
+                <p>📝 <strong>盲打佈局</strong>：輸入即時同步至伺服器。</p>
+                <div id="r1-attacks-container">
+                    </div>
+            </div>
+
             <div id="view-r2" class="view-section">
-                <p>🔥 <strong>即時熱戰</strong>：手動儲存防禦，攻擊有 15 秒冷卻。</p>
-                <div class="input-group">
-                    <label>🛡️ 熱更新 Defense Prompt</label>
-                    <textarea id="r2-def" rows="3"></textarea>
-                    <button onclick="updateDefense()" style="margin-top: 10px;">💾 儲存並覆蓋防禦</button>
-                </div>
-                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+                <p>🔥 <strong>即時熱戰</strong>：攻擊有冷卻時間，請隨時於上方調整防禦規則。</p>
                 <div class="input-group">
                     <label>⚔️ 發動單次攻擊 (Attack Prompt)</label>
                     <textarea id="r2-atk" rows="2" placeholder="輸入單次攻擊指令..."></textarea>
@@ -327,9 +324,27 @@
                 el.style.cursor = isLocked ? "not-allowed" : "auto";
             });
 
-            // 同步草稿 (僅當使用者沒有在該輸入框打字時才覆蓋，防止游標亂跳)
-            if (document.activeElement.id !== 'r1-def') document.getElementById('r1-def').value = teamData.defense;
-            if (document.activeElement.id !== 'r2-def') document.getElementById('r2-def').value = teamData.defense;
+            // 🌟 渲染防禦清單 (支援勾選停用)
+            const defContainer = document.getElementById('defense-list-container');
+            if (teamData.defense && teamData.defense.length > 0) {
+                defContainer.innerHTML = teamData.defense.map((ruleObj, idx) => {
+                    const text = typeof ruleObj === 'string' ? ruleObj : ruleObj.text;
+                    const isActive = typeof ruleObj === 'string' ? true : ruleObj.active;
+                    const textStyle = isActive ? "" : "text-decoration: line-through; color: #94a3b8; opacity: 0.7;";
+                    
+                    return `
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; background: var(--bg-panel); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: opacity 0.2s;">
+                            <div style="display: flex; gap: 12px; flex: 1; align-items: flex-start;">
+                                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleDefenseRule(${idx})" style="margin-top: 4px; cursor: pointer; transform: scale(1.3);">
+                                <span style="white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 0.95rem; transition: all 0.2s; ${textStyle}">${escapeHTML(text)}</span>
+                            </div>
+                            <button onclick="deleteDefenseRule(${idx})" style="background: #ef4444; color: white; padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px; flex-shrink: 0; opacity: 0.8;">❌</button>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                defContainer.innerHTML = `<div style="color: #94a3b8; font-size: 0.9rem; font-style: italic;">目前無任何防禦規則，防線處於裸奔狀態...</div>`;
+            }
             
             for(let i=0; i<10; i++) {
                 const el = document.getElementById(`r1-atk-${i}`);
@@ -486,21 +501,27 @@
             }
         }
 
-        // 🌟 6. 綁定輸入事件 (傳送資料給後端)
-        document.getElementById('r1-def').addEventListener('input', (e) => {
-            ws.send(JSON.stringify({ action: "sync_draft", team: TEAM, type: "def", index: 0, text: e.target.value }));
-        });
-
         for(let i=0; i<10; i++) {
             document.getElementById(`r1-atk-${i}`).addEventListener('input', (e) => {
                 ws.send(JSON.stringify({ action: "sync_draft", team: TEAM, type: "atk", index: i, text: e.target.value }));
             });
         }
 
-        function updateDefense() {
-            const text = document.getElementById('r2-def').value;
-            ws.send(JSON.stringify({ action: "update_defense", team: TEAM, text: text }));
-            alert("✅ 防禦已覆蓋！");
+        function addDefenseRule() {
+            const input = document.getElementById('new-defense-input');
+            const text = input.value.trim();
+            if (!text) return alert("⚠️ 規則不能為空！");
+            ws.send(JSON.stringify({ action: "add_defense", team: TEAM, text: text }));
+            input.value = ""; 
+        }
+
+        function deleteDefenseRule(idx) {
+            if (!confirm("確定要刪除這條防禦規則嗎？")) return;
+            ws.send(JSON.stringify({ action: "delete_defense", team: TEAM, index: idx }));
+        }
+
+        function toggleDefenseRule(idx) {
+            ws.send(JSON.stringify({ action: "toggle_defense", team: TEAM, index: idx }));
         }
         
         function launchAttack() {
