@@ -512,32 +512,35 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # --- 防禦清單操作 (含勾選狀態) ---
                 elif action == "add_defense":
+                    target_team = data.get("team") # 🌟 修正：精準抓出是哪隊發送的
                     text = data.get("text", "").strip()
-                    if text:
-                        # 🌟 存入字典，預設 active 為 True
-                        match_state[team]["defense"].append({"text": text, "active": True})
+                    if target_team and text:
+                        # 存入字典，預設 active 為 True
+                        match_state[target_team]["defense"].append({"text": text, "active": True})
                         
                         # 計算目前有打勾的數量
-                        active_count = sum(1 for r in match_state[team]["defense"] if r.get("active", True))
-                        if active_count > match_state[team]["max_defense_count"]:
-                            match_state[team]["max_defense_count"] = active_count
+                        active_count = sum(1 for r in match_state[target_team]["defense"] if r.get("active", True))
+                        if active_count > match_state[target_team]["max_defense_count"]:
+                            match_state[target_team]["max_defense_count"] = active_count
                             
                 elif action == "toggle_defense":
+                    target_team = data.get("team") # 🌟 修正
                     idx = data.get("index")
-                    if 0 <= idx < len(match_state[team]["defense"]):
-                        # 🌟 反轉該條規則的勾選狀態
-                        current_status = match_state[team]["defense"][idx].get("active", True)
-                        match_state[team]["defense"][idx]["active"] = not current_status
+                    if target_team and 0 <= idx < len(match_state[target_team]["defense"]):
+                        # 反轉該條規則的勾選狀態
+                        current_status = match_state[target_team]["defense"][idx].get("active", True)
+                        match_state[target_team]["defense"][idx]["active"] = not current_status
                         
                         # 計算目前有打勾的數量並挑戰歷史最高紀錄
-                        active_count = sum(1 for r in match_state[team]["defense"] if r.get("active", True))
-                        if active_count > match_state[team]["max_defense_count"]:
-                            match_state[team]["max_defense_count"] = active_count
+                        active_count = sum(1 for r in match_state[target_team]["defense"] if r.get("active", True))
+                        if active_count > match_state[target_team]["max_defense_count"]:
+                            match_state[target_team]["max_defense_count"] = active_count
 
                 elif action == "delete_defense":
+                    target_team = data.get("team") # 🌟 修正
                     idx = data.get("index")
-                    if 0 <= idx < len(match_state[team]["defense"]):
-                        match_state[team]["defense"].pop(idx)
+                    if target_team and 0 <= idx < len(match_state[target_team]["defense"]):
+                        match_state[target_team]["defense"].pop(idx)
                         # 刪除不會讓 max_defense_count 變小，所以不用更新最大值
                 
                 # --- 關主操作 ---
