@@ -271,6 +271,9 @@
 
         // 🌟 5. 畫面渲染與狀態更新邏輯
         function updateUI(state) {
+            // 🌟 修正：把過濾函數移到最上面，確保後面的程式碼都能用到它！
+            const escapeHTML = (str) => (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
             const teamData = state.teams[TEAM];
 
             // 更新計時器與標題
@@ -395,9 +398,6 @@
                 const timeB = b.timestamp || "00:00:00";
                 return timeB.localeCompare(timeA);
             });
-
-            // 安全過濾函數
-            const escapeHTML = (str) => (str || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
             // 🌟 4. 渲染合併後的戰報 (加入第一輪/第二輪前綴判斷) (加入展開功能與深色模式變數)
             const histHtml = combinedHistory.map((log, index) => { // 加上 index 用來做獨立的 ID
